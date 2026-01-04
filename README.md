@@ -20,25 +20,9 @@ Wołoszyn, M., Jakubiuk, K., Flis, M., Analysis of resistive and inductive heati
 
 Lotfi, A., Yousuf, A., Virk, M. S., Study of Heat Distribution in Railway Switch Using Resistive Heater in Cold Climate Conditions, Article.
 
-### 🚀 Funkcjonalności
-
 ## 🛠 Technologie
+Python,Matlab
 
-## 🧠 Teoria i Algorytmy (Opcjonalne)
-
-Jeśli projekt jest algorytmiczny, opisz:
-
-  * Zastosowane algorytmy.
-  * Złożoność obliczeniową (np. $`O(n \log n)`$).
-  * Strukturę danych.
-
-Możesz dodać pseudokod lub diagramy.
-
-## 📊 Przykładowe wyniki
-
-Jeden obraz znaczy więcej niż 1000 słów. Wstaw tutaj zrzut ekranu aplikacji, wykres wydajności lub GIF z działania algorytmu.
-
-## 🤝 Twórcy
 
 
 
