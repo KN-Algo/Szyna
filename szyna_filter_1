@@ -1,0 +1,70 @@
+import csv
+from datetime import datetime, timedelta
+
+
+def wartosc_filter():
+    with open("input.csv", newline="", encoding="utf-8") as infile, \
+            open("output1.csv", "w", newline="", encoding="utf-8") as outfile:
+
+        reader = csv.DictReader(infile, delimiter=";")
+        writer = csv.DictWriter(outfile, fieldnames=reader.fieldnames, delimiter=";")
+
+        writer.writeheader()
+
+        for row in reader:
+            value = row["AP szyn"].strip()
+            if value != "" and float(value) != 0:
+                writer.writerow(row)
+
+def hour_filter():
+    INPUT_FILE = "output1.csv"
+    OUTPUT_FILE = "final_csv.csv"
+    TIME_GAP = timedelta(hours=5)
+
+    rows = []
+
+    with open(INPUT_FILE, newline="", encoding="utf-8-sig") as infile:
+        reader = csv.DictReader(infile, delimiter=";")
+
+        for row in reader:
+            date_str = row["data zdarzenia"].strip()
+            time_str = row["czas zdarzenia"].strip()
+
+            if not date_str or not time_str:
+                continue
+
+            # dokładny format: DD.MM.YYYY HH:MM:SS
+            dt = datetime.strptime(
+                f"{date_str} {time_str}",
+                "%d.%m.%Y %H:%M:%S"
+            )
+
+            row["_datetime"] = dt
+            rows.append(row)
+
+    # sortowanie chronologiczne
+    rows.sort(key=lambda x: x["_datetime"])
+
+    with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as outfile:
+        fieldnames = [k for k in rows[0].keys() if k != "_datetime"]
+        writer = csv.DictWriter(outfile, fieldnames=fieldnames, delimiter=";")
+
+        writer.writeheader()
+
+        previous_dt = None
+
+        for row in rows:
+            current_dt = row["_datetime"]
+
+            # nowy ciąg jeśli przerwa > 5 godzin
+            if previous_dt and current_dt - previous_dt > TIME_GAP:
+                outfile.write("-----------------------------------\n")
+
+            del row["_datetime"]
+            writer.writerow(row)
+
+            previous_dt = current_dt
+
+
+wartosc_filter()
+hour_filter()
