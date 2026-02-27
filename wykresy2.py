@@ -43,7 +43,7 @@ def wykresy2(file_path='wyniki_modelu_v4.csv'):
         plt.savefig('2_wykres_bledow.png', dpi=300, bbox_inches='tight')
         plt.close()
 
-        # abela z współczynnikami 
+        # Tabela z współczynnikami 
         fig, ax = plt.subplots(figsize=(6, 3))
         ax.axis('off') 
 
@@ -76,3 +76,4 @@ def wykresy2(file_path='wyniki_modelu_v4.csv'):
 if __name__ == "__main__":
 
     wykresy2()
+
