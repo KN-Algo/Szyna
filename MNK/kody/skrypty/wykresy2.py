@@ -19,7 +19,7 @@ def wykresy2(file_path='wyniki_modelu_v4.csv'):
         r_squared = 1 - (ss_res / ss_tot)
         rms_error = np.sqrt(np.mean(error**2))
 
-        #  Porównanie (Model vs Obiekt) 
+        #  Porównanie Model vs Obiekt 
         plt.figure(figsize=(10, 6))
         plt.plot(k, y_real, 'b-', label='Dane rzeczywiste (Obiekt)', alpha=0.7)
         plt.plot(k, y_model, 'r--', label='Symulacja modelu MNK', linewidth=2)
@@ -76,4 +76,5 @@ def wykresy2(file_path='wyniki_modelu_v4.csv'):
 if __name__ == "__main__":
 
     wykresy2()
+
 
