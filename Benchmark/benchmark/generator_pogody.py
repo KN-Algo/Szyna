@@ -1,21 +1,21 @@
 import requests
 import pandas as pd
-import matplotlib.pyplot as plt  # <-- DODANA BIBLIOTEKA DO WYKRESÓW
+import matplotlib.pyplot as plt
 
-def get_wroclaw_15min_historical_forecast():
-    print("🌍 Łączenie z API Open-Meteo (Historical Forecast - 15 min)...")
+def get_snowy_historical_forecast():
+    print("🌍 Łączenie z API Open-Meteo (Atak Śnieżycy - Grudzień 2023)...")
     
     url = "https://historical-forecast-api.open-meteo.com/v1/forecast"
     
     params = {
-        "latitude": 51.1079,
-        "longitude": 17.0385,
-        "start_date": "2024-11-01",
-        "end_date": "2025-03-31",
+        "latitude": 50.04,  # Współrzędne południowo-wschodniej Polski (Rzeszów i okolice)
+        "longitude": 22.00, # Tam zasypało drogi i tory całkowicie w grudniu 2023
+        "start_date": "2023-12-01",
+        "end_date": "2023-12-25",
         "minutely_15": [
             "temperature_2m",       
             "dewpoint_2m",          
-            "precipitation",        
+            "precipitation",  # Łączny opad (w ujemnej temperaturze to czysty śnieg)      
             "wind_speed_10m",       
             "sunshine_duration"     
         ],
@@ -48,19 +48,17 @@ def get_wroclaw_15min_historical_forecast():
         return None
 
 
-# --- MODYFIKACJA FUNKCJI WYKRESU ---
-def pokaz_wykres_kontrolny_grudzien(df):
-    print("\n📊 Przygotowywanie wykresu dla tygodnia w grudniu...")
+def pokaz_wykres_kontrolny_snieg(df):
+    print("\n📊 Przygotowywanie wykresu dla śnieżnego kataklizmu...")
     
-    # Kopiujemy dane i ustawiamy czas jako indeks
     df_plot = df.copy()
     df_plot.set_index('data_czas', inplace=True)
     
-    # Wycinamy pełny tydzień: od poniedziałku 9 grudnia do niedzieli 15 grudnia 2024
-    wycinek = df_plot.loc['2024-12-09':'2024-12-15']
+    # Wycinamy najciekawszy okres: pierwsze dwa tygodnie grudnia 2023
+    wycinek = df_plot.loc['2023-12-01':'2023-12-10']
     
     if wycinek.empty:
-        print("❌ Brak danych w podanym zakresie grudniowym. Upewnij się, że end_date w API to co najmniej 2024-12-15!")
+        print("❌ Brak danych w podanym zakresie.")
         return
 
     fig, ax1 = plt.subplots(figsize=(14, 7))
@@ -72,37 +70,36 @@ def pokaz_wykres_kontrolny_grudzien(df):
     ax1.plot(wycinek.index, wycinek['temperatura_powietrza_C'], color=color, linewidth=2, label='Temperatura (°C)')
     ax1.tick_params(axis='y', labelcolor=color)
     
-    # Dodanie linii 0°C dla lepszej orientacji w zimowych danych
     ax1.axhline(0, color='black', linestyle='--', linewidth=1.2, alpha=0.7, label='Próg 0°C')
     ax1.grid(True, linestyle='--', alpha=0.5)
 
-    # OŚ 2: Opady (Obszar niebieski)
+    # OŚ 2: Opady (Obszar jasnoniebieski)
     ax2 = ax1.twinx()  
-    color = '#3498db'
-    ax2.set_ylabel('Suma opadów (mm)', color=color, fontweight='bold')
-    ax2.fill_between(wycinek.index, wycinek['opad_mm'], color=color, alpha=0.4, label='Opad (mm)')
+    color = '#34495e'
+    ax2.set_ylabel('Intensywność śnieżycy (mm opadu / 15min)', color=color, fontweight='bold')
+    ax2.fill_between(wycinek.index, wycinek['opad_mm'], color='#3498db', alpha=0.5, label='Opad (śnieg w ujemnej temp.)')
     ax2.tick_params(axis='y', labelcolor=color)
 
-    # Łączenie legend z obu osi w jedną
     lines1, labels1 = ax1.get_legend_handles_labels()
     lines2, labels2 = ax2.get_legend_handles_labels()
     ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper right')
 
-    plt.title('Kontrola jakośći danych: Tydzień w Grudniu 2024 (Wrocław co 15 minut)', fontsize=14, fontweight='bold', pad=15)
+    plt.title('Kontrola jakości danych: Rekordowe Śnieżyce w Polsce (Grudzień 2023, krok 15-minutowy)', fontsize=14, fontweight='bold', pad=15)
     fig.tight_layout()
     
     print("📈 Wyświetlam okno wykresu...")
     plt.show()
 
 # --- URUCHOMIENIE ---
-df_pogoda = get_wroclaw_15min_historical_forecast()
+df_pogoda = get_snowy_historical_forecast()
 
 if df_pogoda is not None:
-    output_file = "wroclaw_pogoda_15min_model.csv"
+    # 💡 Zapisujemy dokładnie pod taką samą nazwą, jakiej szuka Twój zintegrowany skrypt!
+    output_file = "suwalki_pogoda_15_min_model.csv" 
     df_pogoda.to_csv(output_file, index=False)
-    print(f"\n🎯 ZAKOŃCZONO! Dane zapisane w: {output_file}")
+    print(f"\n🎯 ZAKOŃCZONO! Ekstremalnie śnieżne dane zapisane w: {output_file}")
     
-    # Odpalamy nowy wykres grudniowy
-    pokaz_wykres_kontrolny_grudzien(df_pogoda)
+    # Odpalamy wykres sprawdzający
+    pokaz_wykres_kontrolny_snieg(df_pogoda)
 else:
     print("❌ Nie udało się pobrać danych.")
