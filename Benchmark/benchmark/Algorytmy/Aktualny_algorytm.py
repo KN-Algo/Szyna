@@ -73,6 +73,9 @@ class RailHeatingController:
         at = float(row_data['AT_temp_powietrza'])
         precip = float(row_data['PRECIP_opad'])
         snow = float(row_data['SNOW_snieg'])
+
+        risk = self.calculate_risk_level(row_data)
+
         
         # 1. Reset licznika z nastaniem nowego dnia (czysta karta na dobę)
         active_date = timestamp.date()
