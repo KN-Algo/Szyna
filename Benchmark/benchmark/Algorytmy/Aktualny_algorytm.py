@@ -22,6 +22,50 @@ class RailHeatingController:
         self.hrt_on_dry = 1.0               # HRT załączenie bez opadów: +1°C (Tabela nr 6) 
         self.hrt_off_dry = 3.0              # HRT wyłączenie bez opadów: +3°C (Tabela nr 6) 
 
+    def calculate_risk_level(self, row_data) -> int:
+        """
+        Metoda oceniająca ryzyko oblodzenia/zamarzania w skali od 0 do 10.
+        """
+        at = float(row_data['AT_temp_powietrza'])
+        rh = float(row_data['RH_wilgotnosc'])
+        precip = float(row_data['PRECIP_opad'])
+        snow = float(row_data['SNOW_snieg'])
+        
+        # Pobieramy temperaturę niegrzanej szyny (CRT) jako najlepszy wyznacznik.
+        # Jeśli nie ma jej w słowniku, domyślnie bierzemy temperaturę powietrza (at).
+        crt = float(row_data.get('CRT_temp_niegrzana', at))
+
+        # Progi detekcji opadu (wartości w mm/s bywają bardzo małe)
+        is_raining = precip > 0.0001
+        is_snowing = snow > 0.0001
+
+        # --- 10 & 9: MARZNĄCY DESZCZ (Krytyczne zagrożenie) ---
+        if is_raining and (crt <= 1.0 or at <= 1.0):
+            return 10 if precip > 0.001 else 9  # 10 dla ulewy, 9 dla mniejszego opadu
+
+        # --- 8 & 7: INTENSYWNY ŚNIEG (Wysokie zagrożenie zasypaniem/zablokowaniem) ---
+        if is_snowing and crt <= 2.0:
+            return 8 if snow > 0.001 else 7    # 8 dla śnieżycy, 7 dla lekkiego śniegu
+
+        # --- 6 & 5: WILGOĆ I MRÓZ (Średnie zagrożenie - szron, szadź, gołoledź) ---
+        if crt <= 0.5 and rh > 85.0:
+            return 6 if rh > 95.0 else 5       # 6 przy ekstremalnej wilgotności
+
+        # --- 4 & 3: SUCHY MRÓZ (Niskie/Średnie zagrożenie - profilaktyka przed wychłodzeniem stali) ---
+        if crt <= -3.0:
+            return 4                           # Głęboki mróz, stal jest bardzo zimna
+        if crt <= 0.0:
+            return 3                           # Lekki mróz wokół zera
+
+        # --- 2 & 1: POTENCJALNE ZAGROŻENIE (Niskie ryzyko) ---
+        if (is_raining or is_snowing) and crt <= 3.0:
+            return 2                           # Opad przy lekkim plusie (może zaraz zamarznąć)
+        if at <= 3.0:
+            return 1                           # Po prostu zimno, ale sucho i bez krytycznej wilgoci
+
+        # --- 0: PEŁNE BEZPIECZEŃSTWO ---
+        return 0
+
     def compute_control(self, row_data):
         timestamp = row_data['Timestamp']
         crt = float(row_data['CRT_temp_niegrzana'])
