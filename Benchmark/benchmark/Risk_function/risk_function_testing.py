@@ -84,95 +84,111 @@ def calculate_relative_humidity(temp, dew_point):
 
 def generate_reference_labels(df):
     """
-    Generuje płynne, referencyjne poziomy ryzyka (Ground Truth) w skali od 0.0 do 10.0.
-    Eliminuje skokowe progi na rzecz ciągłych funkcji uzależnionych od czasu trwania 
-    oraz chwilowej intensywności opadu (im silniejszy opad, tym szybciej rośnie ryzyko).
+    Generuje płynne, referencyjne poziomy ryzyka (0.0 - 10.0), analizując CAŁE SPEKTRUM
+    nadchodzących warunków pogodowych w oknie 1 godziny w przód. Dzięki temu etykiety
+    uwzględniają bezwładność cieplną szyny i potrzebę wyprzedzenia grzewczego.
     """
+    # KROK 1: ANALIZA SPEKTRUM PRZYSZŁOŚCI (Sprytny trik z odwróconym oknem kroczącym)
+    # Patrzymy 3600 sekund (1 godzina) w przód, żeby wiedzieć, co nadchodzi
+    print("🔮 Analiza spektrum przyszłości: Obliczanie trendów długoterminowych...")
+    
+    # Odwracamy serię, liczymy rolling min/sum i odwracamy z powrotem, by poznać przyszłość
+    future_window = 3600  # 1 godzina w sekundach
+    
+    df['future_min_temp'] = df['temperatura_powietrza_C'].iloc[::-1].rolling(window=future_window, min_periods=1).min().iloc[::-1]
+    df['future_total_opad'] = df['opad_mm'].iloc[::-1].rolling(window=future_window, min_periods=1).sum().iloc[::-1]
+    df['future_max_rh'] = df['RH_wyliczona'].iloc[::-1].rolling(window=future_window, min_periods=1).max().iloc[::-1]
+
     ref_risks = []
     rain_counter = 0.0
     
-    for _, row in df.iterrows():
+    # KROK 2: ITERACYJNE WYLICZANIE RYZYKA Z UWZGLĘDNIENIEM PRZYSZŁOŚCI
+    for idx, row in df.iterrows():
         at = row['temperatura_powietrza_C']
         rh = row['RH_wyliczona']
-        opad = row['opad_mm']  # Intensywność opadu w [mm/s]
+        opad = row['opad_mm']
+        
+        # Pobieramy dane o nadchodzącym spektrum pogody dla tej konkretnej sekundy
+        f_min_temp = row['future_min_temp']
+        f_total_opad = row['future_total_opad']
+        f_max_rh = row['future_max_rh']
         
         is_opad = opad > 0.0001
+        is_opad_w_przyszlosci = f_total_opad > 0.01  # czy w ciągu godziny spadnie łącznie jakaś woda/śnieg
         
-        # --- 1. REJESTRATOR HISTORII (DYNAMICZNA AKUMULACJA OPADU) ---
-        # Licznik sekund rośnie nieliniowo w zależności od intensywności opadu.
-        # Silna śnieżyca czy ulewa degraduje rozjazd znacznie szybciej niż mała mżawka.
+        # --- REJESTRATOR HISTORII ---
         if is_opad and at <= 2.0:
-            # Bazowo dodajemy +1 sekundę, ale mocny opad (skalowany względem 0.0005 mm/s)
-            # drastycznie przyspiesza przyrost licznika (mnożnik intensywności).
             intensywnosc_mnoznik = max(1.0, opad / 0.0005)
             rain_counter += 1.0 * intensywnosc_mnoznik
         else:
-            # Bezwładność wysychania/topnienia: po ustaniu opadu ryzyko nie spada do zera od razu.
-            # Szyna wraca do stanu suchego powoli (licznik maleje o 5 sekund na każdą sekundę bez opadu).
             rain_counter = max(0.0, rain_counter - 5.0)
             
-        # --- 2. PŁYNNA MATRYCA WARUNKÓW POGODOWYCH (0.0 - 10.0) ---
+        # --- MATRYCA RYZYKA OPARTA O SPEKTRUM (TERAZ + PRZYSZŁOŚĆ) ---
         
-        # [PROG BEZPIECZEŃSTWA] Ciepłe powietrze uniemożliwia powstanie lodu/szronu
-        if at > 4.0:
-            risk = 0.0
+        # [STAN KRYTYCZNY: NADCHODZĄCY KATAKLIZM] 
+        # Teraz może być spokojnie (+1°C, lekka mżawka), ale spektrum godziny pokazuje uderzenie mrozu i ulewę.
+        # Wymuszamy natychmiastowe ryzyko 9-10, by zmusić grzałki do uderzenia wyprzedzającego.
+        if is_opad_w_przyszlosci and f_min_temp <= 0.5:
+            base_risk = 8.0
+            # Skalujemy ryzyko w zależności od tego, jak silny opad idzie i jak głęboki mróz nadchodzi
+            temp_severity = min(1.0, abs(min(0.0, f_min_temp)) / 5.0)  # max dla -5°C
+            opad_severity = min(1.0, f_total_opad / 5.0)               # skumulowany opad z godziny
             
-        # [WARUNEK 1: MARZNĄCY DESZCZ / ŚNIEŻYCA PRZY MROZIE - TABELA 5]
-        # Krytyczny stan (opad przy temperaturze <= 1.0°C). Ryzyko płynnie dąży do absolutnego max (10.0).
+            risk = base_risk + (temp_severity * 1.0) + (opad_severity * 1.0)
+
+        # [STAN 2: TRWAJĄCY MARZNĄCY OPAD LUB ŚNIEŻYCA]
         elif is_opad and at <= 1.0:
-            base_risk = 7.5  # Startujemy z wysokiego pułapu, bo sytuacja od razu jest groźna
-            
-            # Wpływ czasu: Ryzyko rośnie płynnie o max +1.5 wraz z upływem minut (pełen efekt po ~20 min opadu)
+            base_risk = 7.5
             duration_bonus = min(1.5, rain_counter / 1200.0)
-            
-            # Wpływ intensywności: Im więcej śniegu/deszczu leci w tej sekundzie, tym mocniej 
-            # dobijamy ryzyko w górę (max +1.0 dla ulewy powyżej 0.0015 mm/s)
             intensity_bonus = min(1.0, opad / 0.0015)
-            
             risk = base_risk + duration_bonus + intensity_bonus
             
-        # [WARUNEK 2: OPAD W STREFIE PRZEJŚCIOWEJ WOKÓŁ ZERA - TABELA 5]
-        # Śnieg lub deszcz przy lekkim plusie (1.0°C do 2.0°C). Ryzyko narasta płynnie w przedziale 6.0 - 8.5.
+        # [STAN 3: OPAD W STREFIE ZERA]
         elif is_opad and at <= 2.0:
             base_risk = 6.0
-            duration_bonus = min(1.5, rain_counter / 1500.0)  # wolniejszy przyrost czasu niż przy głębokim mrozie
-            intensity_bonus = min(1.0, opad / 0.0020)         # duża ilość śniegu potrafi mocno podbić ten stan
-            
+            duration_bonus = min(1.5, rain_counter / 1500.0)
+            intensity_bonus = min(1.0, opad / 0.0020)
             risk = base_risk + duration_bonus + intensity_bonus
             
-        # [WARUNEK 3: WILGOĆ I LEKKI MRÓZ BEZ OPADÓW - KONDENSACJA / SZRON]
-        # Nie pada z nieba, ale szyna ma poniżej 0.5°C, a wilgotność przekracza 85%.
-        # Ryzyko rośnie całkowicie liniowo od 4.0 (dla RH=85%) do 6.5 (dla skrajnej mgły RH=100%).
+        # [STAN 4: NADCHODZĄCY SZRON / MGŁA ROSY]
+        # Nie pada, ale widzimy w spektrum, że wilgotność za chwilę dobije do 100% przy ujemnej temperaturze
+        elif (at <= 0.5 or f_min_temp <= 0.5) and f_max_rh > 90.0:
+            rh_gap = (f_max_rh - 90.0) / 10.0  # 0.0 do 1.0
+            risk = 4.5 + (rh_gap * 2.0)
+            
+        # [STAN 5: WILGOĆ I LEKKI MRÓZ (AKTUALNY SZRON)]
         elif at <= 0.5 and rh > 85.0:
-            # Mapujemy nadwyżkę wilgotności (przedział 85%-100%) na wartość od 0.0 do 1.0
             rh_scale = (rh - 85.0) / 15.0
             risk = 4.0 + (rh_scale * 2.5)
             
-        # [WARUNEK 4: SUCHY, GŁĘBOKI MRÓZ - TABELA 6]
-        # Brak opadów i brak szronu, ale stal się kurczy i gęstnieją smary mechaniczne zwrotnicy.
-        # Ryzyko profilaktyczne rośnie liniowo: dla 0°C wynosi 1.0 pkt, a dla silnego mrozu -15°C osiąga 4.0 pkt.
+        # [STAN 6: SUCHY MRÓZ]
         elif at <= 0.0:
-            # Każde 5 stopni mrozu gładko podnosi ryzyko o +1.0 punktu
             risk = 1.0 + min(3.0, abs(at) / 5.0)
             
-        # [WARUNEK 5: OPAD PRZY DODATNIEJ TEMPERATURZE - PROFILAKTYKA PRZED PRZYMROZKIEM]
-        # Pada deszcz przy temperaturze od 2.0°C do 3.0°C. Ryzyko rośnie płynnie, im bliżej zera jest temperatura.
+        # [STAN 7: AKTUALNY OPAD NA PLUSIE LUB DROBNE ZIMNO]
         elif is_opad and at <= 3.0:
             risk = 1.0 + (3.0 - at) * 0.5
-            
-        # [WARUNEK 6: ZIMNO, SUCHO I BEZPIECZNIE]
-        # Temperatura lekko plusowa (do 3.0°C), brak jakichkolwiek zjawisk. Ryzyko jest śladowe (0.0 - 1.0).
         elif at <= 3.0:
             risk = (3.0 - at) * 0.33
-            
         else:
             risk = 0.0
+
+        # Niezależnie od opadów, poniżej -10°C ryzyko drastycznie wymusza grzanie, a przy -15°C osiąga maksimum.
+        if at <= -10.0:
+            if at <= -15.0:
+                risk = 10.0  # Krytyczny mróz konstrukcyjny - pełna blokada na 10
+            else:
+                # Płynna interpolacja liniowa przyrostu ryzyka (0.0 dla -10°C, 1.0 dla -15°C)
+                progres_mrozu = (at - (-10.0)) / (-15.0 - (-10.0))
+                # Bezpiecznie podnosimy aktualną wartość ryzyka w stronę 10.0
+                risk = max(risk, risk + (10.0 - risk) * progres_mrozu)
             
-        # Ścisłe zabezpieczenie matematyczne przed wyjściem poza ramy skali 0-10
         final_risk = max(0.0, min(10.0, risk))
         ref_risks.append(final_risk)
         
+    # Czyszczenie kolumn pomocniczych, żeby nie śmiecić w pliku cache
     df['REF_RYZYKO'] = ref_risks
+    df.drop(columns=['future_min_temp', 'future_total_opad', 'future_max_rh'], inplace=True)
     return df
 
 
