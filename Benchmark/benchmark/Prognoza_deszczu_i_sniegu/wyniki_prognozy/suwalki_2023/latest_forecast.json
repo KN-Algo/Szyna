@@ -1,0 +1,66 @@
+{
+  "will_precipitate": true,
+  "lead_time_min": 45,
+  "details": {
+    "horizon_min": 45,
+    "will_precipitate": true,
+    "probability": 0.483247,
+    "precipitation_amount_mm_15min": 0.1261,
+    "predicted_air_temperature_C": 9.158,
+    "predicted_dew_point_C": 6.8,
+    "predicted_wet_bulb_C": 7.62,
+    "snow_water_equivalent_mm": 0.0,
+    "estimated_fresh_snow_depth_cm": 0.0,
+    "type": "rain",
+    "horizons": [
+      {
+        "horizon_min": 15,
+        "will_precipitate": false,
+        "probability": 0.178615,
+        "precipitation_type": "none",
+        "precipitation_amount_mm_15min": 0.0,
+        "predicted_air_temperature_C": 9.053,
+        "predicted_dew_point_C": 6.8,
+        "predicted_wet_bulb_C": 7.576,
+        "snow_water_equivalent_mm": 0.0,
+        "estimated_fresh_snow_depth_cm": 0.0
+      },
+      {
+        "horizon_min": 30,
+        "will_precipitate": false,
+        "probability": 0.354955,
+        "precipitation_type": "none",
+        "precipitation_amount_mm_15min": 0.0,
+        "predicted_air_temperature_C": 9.105,
+        "predicted_dew_point_C": 6.8,
+        "predicted_wet_bulb_C": 7.598,
+        "snow_water_equivalent_mm": 0.0,
+        "estimated_fresh_snow_depth_cm": 0.0
+      },
+      {
+        "horizon_min": 45,
+        "will_precipitate": true,
+        "probability": 0.483247,
+        "precipitation_type": "rain",
+        "precipitation_amount_mm_15min": 0.1261,
+        "predicted_air_temperature_C": 9.158,
+        "predicted_dew_point_C": 6.8,
+        "predicted_wet_bulb_C": 7.62,
+        "snow_water_equivalent_mm": 0.0,
+        "estimated_fresh_snow_depth_cm": 0.0
+      },
+      {
+        "horizon_min": 60,
+        "will_precipitate": false,
+        "probability": 0.454469,
+        "precipitation_type": "none",
+        "precipitation_amount_mm_15min": 0.0,
+        "predicted_air_temperature_C": 9.21,
+        "predicted_dew_point_C": 6.8,
+        "predicted_wet_bulb_C": 7.641,
+        "snow_water_equivalent_mm": 0.0,
+        "estimated_fresh_snow_depth_cm": 0.0
+      }
+    ]
+  }
+}
