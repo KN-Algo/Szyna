@@ -14,7 +14,7 @@ matplotlib.use('TkAgg')
 # ==============================================================================
 # JEDNA LINIKA DO ZMIANY ALGORYTMU
 # ==============================================================================
-from Algorytmy.Fuzzy_Logic_2v2 import RailHeatingController
+from Algorytmy.Fuzzy_Logic_2 import RailHeatingController
 
 # ==============================================================================
 # CONFIG: AUTOMATYCZNE ŚCIEŻKI WZGLEDNE
