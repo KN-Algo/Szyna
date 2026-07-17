@@ -24,11 +24,12 @@ class RailHeatingController:
         if x < x_srodek: return (x - x0) / (x_srodek - x0)
         return 1.0 - ((x - x_srodek) / (x1 - x_srodek))
 
-    def _fuzzifikuj_temperature(self, blad_T):
+    def _fuzzifikuj_temperature(self, blad_T, hrt):
         ok = self._rampa_malejaca(blad_T, 0.0, 3.0)
         chlodno = self._trojkat(blad_T, 0.0, 3.0, 6.0)
         mrozno = self._rampa_rosnaca(blad_T, 3.0, 6.0)
-        return ok, chlodno, mrozno
+        lodowato = self._rampa_malejaca(hrt, -15.0, -12.0)
+        return ok, chlodno, mrozno, lodowato
 
     def compute_control(self, row_data):
         hrt = float(row_data['HRT_temp_grzana'])
@@ -41,7 +42,7 @@ class RailHeatingController:
         
         # 1. Nowe obliczenie mocy rozmytej wykonywane RAZ na początku każdego cyklu (co 60s)
         blad_T = self.T_ZADANA - hrt
-        t_ok, t_chlodno, t_mrozno = self._fuzzifikuj_temperature(blad_T)
+        t_ok, t_chlodno, t_mrozno, t_lodowato = self._fuzzifikuj_temperature(blad_T, hrt)
         
         opad_aktywny = 1.0 if (jest_snieg or jest_deszcz) else 0.0
         opad_brak = 1.0 if not (jest_snieg or jest_deszcz) else 0.0
@@ -51,14 +52,15 @@ class RailHeatingController:
         r3 = min(t_chlodno, opad_aktywny)
         r4 = min(t_mrozno, opad_brak)
         r5 = min(t_mrozno, opad_aktywny)
-        
+        r6 = t_lodowato
         licznik = (r1 * self.MOC_OFF + 
                         r2 * self.MOC_OFF + 
                         r3 * self.MOC_MED + 
                         r4 * self.MOC_LOW + 
-                        r5 * self.MOC_HIGH)        
+                        r5 * self.MOC_HIGH + 
+                        r6 * self.MOC_HIGH)        
         
-        mianownik = r1 + r2 + r3 + r4 + r5
+        mianownik = r1 + r2 + r3 + r4 + r5 + r6
         
         if mianownik == 0:
             return 0.0

@@ -14,7 +14,7 @@ matplotlib.use('TkAgg')
 # ==============================================================================
 # JEDNA LINIKA DO ZMIANY ALGORYTMU
 # ==============================================================================
-from Algorytmy.Aktualny_algorytm import RailHeatingController
+from Algorytmy.Fuzzy_Logic_2v2 import RailHeatingController
 
 # ==============================================================================
 # CONFIG: AUTOMATYCZNE ŚCIEŻKI WZGLEDNE
@@ -22,7 +22,7 @@ from Algorytmy.Aktualny_algorytm import RailHeatingController
 # Skrypt automatycznie wykrywa gdzie się znajduje i buduje ścieżki w dół struktury
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-NAZWA_PLIKU_CSV = os.path.join(BASE_DIR, "Pogoda_pomiary_15_minut", "suwalki_pogoda_15_min_model_2023.csv")
+NAZWA_PLIKU_CSV = os.path.join(BASE_DIR, "Pogoda_pomiary_15_minut", "suwalki_pogoda_15_min_model_2010.csv")
 SCIEZKA_WYNIKOW = os.path.join(BASE_DIR, "wyniki", "wyniki_symualcji_1s.csv")
 
 # Upewniamy się, że folder na wyniki istnieje
