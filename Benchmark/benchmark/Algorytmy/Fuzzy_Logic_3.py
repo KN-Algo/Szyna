@@ -71,7 +71,7 @@ class RailHeatingController:
         if czas_wlaczenia < 15.0:
             czas_wlaczenia = 0.0
         if czas_wlaczenia > 45.0:
-            czas_wlaczenia = 60.0
+            czas_wlaczenia = float(self.OKRES_CYKLU)
         
         # 3. Decyzja zero-jedynkowa (Wyjście binarne w oparciu o aktualną sekundę)
         if self.sekunda_cyklu < czas_wlaczenia:
