@@ -39,7 +39,7 @@ class RailHeatingController:
         
         # Progi odcięcia małych opadów
         jest_snieg = snow > 0.0
-        jest_deszcz = precip > 0.2
+        jest_deszcz = precip > 0.0
         
         # 1. Obliczenie mocy rozmytej (wykonywane przy każdym wywołaniu compute_control)
         blad_T = self.T_ZADANA - hrt
