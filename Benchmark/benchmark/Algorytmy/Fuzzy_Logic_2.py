@@ -40,7 +40,7 @@ class RailHeatingController:
         jest_snieg = snow > 0.0
         jest_deszcz = precip > 0.2
         
-        # 1. Nowe obliczenie mocy rozmytej wykonywane RAZ na początku każdego cyklu (co 60s)
+        # 1. Obliczenie mocy rozmytej (wykonywane przy każdym wywołaniu compute_control)
         blad_T = self.T_ZADANA - hrt
         t_ok, t_chlodno, t_mrozno, t_lodowato = self._fuzzifikuj_temperature(blad_T, hrt)
         
