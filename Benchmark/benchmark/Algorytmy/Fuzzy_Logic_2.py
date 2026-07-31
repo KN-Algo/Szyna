@@ -1,6 +1,7 @@
 class RailHeatingController:
     def __init__(self, t_zadana=3.0, max_switches_per_day=12, **kwargs):
         self.T_ZADANA = t_zadana
+        self.max_switches_per_day = max_switches_per_day  # kompatybilność z main_test.py (limit niezaimplementowany w FL2)
     
         # Singletony Sugeno (pozostają płynne do obliczeń)
         self.MOC_OFF = 0.0
