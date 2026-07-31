@@ -42,7 +42,8 @@ class RailHeatingController:
         
         # 1. Nowe obliczenie mocy rozmytej wykonywane RAZ na początku każdego cyklu (co 60s)
         blad_T = self.T_ZADANA - hrt
-        t_ok, t_chlodno, t_mrozno, t_lodowato = self._fuzzifikuj_temperature(blad_T, hrt)
+        R = precip
+        t_ok, t_chlodno, t_mrozno, t_lodowato = self._fuzzifikuj_temperature(blad_T, hrt, R)
         
         opad_aktywny = 1.0 if (jest_snieg or jest_deszcz) else 0.0
         opad_brak = 1.0 if not (jest_snieg or jest_deszcz) else 0.0
