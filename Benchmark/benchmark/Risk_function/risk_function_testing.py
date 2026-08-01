@@ -82,6 +82,8 @@ def calculate_relative_humidity(temp, dew_point):
     rh = 100 * np.exp(alpha_dp - alpha_tr)
     return np.clip(rh, 0.0, 100.0)
 
+
+
 def generate_reference_labels(df):
     """
     Generuje płynne, referencyjne poziomy ryzyka (0.0 - 10.0), analizując CAŁE SPEKTRUM
