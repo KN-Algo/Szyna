@@ -45,9 +45,7 @@ class RailHeatingController:
         # 2. Warunki bez opadów / suchy mróz (Tabela nr 6, wariant dla dwóch czujników)
         self.at_low_freeze = -5.0           # Suchy mróz dolna granica: -5°C (Tabela nr 6) 
         self.hrt_on_dry = 1.0               # HRT załączenie bez opadów: +1°C (Tabela nr 6) 
-        self.hrt_off_dry = 3.0              # HRT wyłączenie bez opadów: +3°C (Tabela nr 6)
-
-
+        self.hrt_off_dry = 3.0              # HRT wyłączenie bez opadów: +3°C (Tabela nr 6
     
 
     def raining_prediction(self):
