@@ -14,7 +14,7 @@ matplotlib.use('TkAgg')
 # ==============================================================================
 # JEDNA LINIKA DO ZMIANY ALGORYTMU
 # ==============================================================================
-from Algorytmy.Aktualny_algorytm import RailHeatingController
+from Algorytmy.Fuzzy_Logic_2 import RailHeatingController
 
 # ==============================================================================
 # CONFIG: AUTOMATYCZNE ŚCIEŻKI WZGLEDNE
@@ -22,7 +22,7 @@ from Algorytmy.Aktualny_algorytm import RailHeatingController
 # Skrypt automatycznie wykrywa gdzie się znajduje i buduje ścieżki w dół struktury
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-NAZWA_PLIKU_CSV = os.path.join(BASE_DIR, "Pogoda_pomiary_15_minut", "suwalki_pogoda_15_min_model_2023.csv")
+NAZWA_PLIKU_CSV = os.path.join(BASE_DIR, "Pogoda_pomiary_15_minut", "suwalki_pogoda_15_min_model_2010.csv")
 SCIEZKA_WYNIKOW = os.path.join(BASE_DIR, "wyniki", "wyniki_symualcji_1s.csv")
 
 # Upewniamy się, że folder na wyniki istnieje
@@ -50,10 +50,13 @@ class SnowIcePhysicalModel:
     def __init__(self):
         self.snow_layer_mm = 0.0
         self.ice_layer_mm = 0.0
+        self.water_layer_mm = 0.0  # Warstwa wody
         
         # Fizyczne stałe
         self.snow_to_liquid_ratio = 10.0  # 1 mm wody = 10 mm puszystego śniegu
         self.melt_rate = 0.005            # Skorygowany współczynnik topnienia na sekundę per stopień
+        self.freeze_rate = 0.008          # Szybkość zamarzania wody
+        self.drain_evap_rate = 0.002      # Szybkość parowania/spływania
 
     def update(self, at_temp, hrt_temp, precip, dt=1.0):
         # precip przychodzi jako mm wody na sekundę
@@ -67,6 +70,8 @@ class SnowIcePhysicalModel:
         else:
             if current_rain_liquid > 0 and hrt_temp <= 0.0:
                 self.ice_layer_mm += current_rain_liquid * dt
+            elif current_rain_liquid > 0 and hrt_temp > 0.0:
+                self.water_layer_mm += current_rain_liquid * dt
 
         # 2. TOPNIENIE: Następuje tylko, gdy szyna jest ciepła (hrt_temp > 0)
         if hrt_temp > 0.0:
@@ -77,6 +82,7 @@ class SnowIcePhysicalModel:
             if self.snow_layer_mm > 0:
                 melted_snow = min(self.snow_layer_mm, melt_potential)
                 self.snow_layer_mm -= melted_snow
+                self.water_layer_mm += melted_snow / self.snow_to_liquid_ratio
                 melt_potential -= melted_snow
             
             # Jeśli starczyło ciepła, topimy lód
@@ -84,8 +90,22 @@ class SnowIcePhysicalModel:
                 # Lód topi się trudniej (jest gęstszy), powiedzmy 2x wolniej niż śnieg
                 melted_ice = min(self.ice_layer_mm, melt_potential * 0.5)
                 self.ice_layer_mm -= melted_ice
+                self.water_layer_mm += melted_ice
 
-        return max(0.0, self.snow_layer_mm), max(0.0, self.ice_layer_mm)
+        # ZAMARZANIE: Jeśli szyna już wystygła i jest woda
+        if hrt_temp <= 0.0 and self.water_layer_mm > 0:
+            freeze_potential = abs(hrt_temp) * self.freeze_rate * dt
+            frozen_water = min(self.water_layer_mm, freeze_potential)
+            self.water_layer_mm -= frozen_water
+            self.ice_layer_mm += frozen_water
+
+        #SCHNIĘCIE:
+        if self.water_layer_mm > 0:
+            temp_factor = max(1.0, hrt_temp)
+            evaporation = self.drain_evap_rate * temp_factor * dt
+            self.water_layer_mm = max(0.0, self.water_layer_mm - evaporation)
+
+        return max(0.0, self.snow_layer_mm), max(0.0, self.ice_layer_mm), max(0.0, self.water_layer_mm)
 
 # ==============================================================================
 # 2. WCZYTYWANIE DANYCH POGODOWYCH I INTERPOLACJA DO 1 SEKUNDY
@@ -186,12 +206,12 @@ for index in range(total_steps):
         u_delayed = 0.0
 
     x_h = A_hd @ x_h + B_hd * u_delayed
-    hrt_heating_comp = float(C_hd @ x_h + D_hd * u_delayed)
+    hrt_heating_comp = (C_hd @ x_h + D_hd * u_delayed).item()
 
     current_hrt = hrt_weather_comp + hrt_heating_comp
     current_crt = hrt_weather_comp
 
-    stan_sniegu_mm, stan_lodu_mm = ice_model.update(at_temp, current_hrt, precip_1s, dt=1.0)
+    stan_sniegu_mm, stan_lodu_mm, stan_wody_mm = ice_model.update(at_temp, current_hrt, precip_1s, dt=1.0)
     
     historia_wynikow.append({
         'Timestamp': ts,
@@ -202,7 +222,8 @@ for index in range(total_steps):
         'SNOW_snieg_1s': snow_val,
         'Moc_procent': sterowanie_procent,
         'Snieg_na_szynie_mm': stan_sniegu_mm,
-        'Lod_na_szynie_mm': stan_lodu_mm
+        'Lod_na_szynie_mm': stan_lodu_mm,
+        'Woda_na_szynie_mm': stan_wody_mm
     })
 
     # --- NOWOŚĆ: LICZNIK PROCENTOWY ORAZ CZASU UKOŃCZENIA (ETA) ---
@@ -274,7 +295,8 @@ colors = {
     'hrt':     '#e74c3c', 'crt':     '#95a5a6', 'at':      '#34495e',
     'moc':     '#f1c40f', 'opad':    '#3498db', 'snieg':   '#2ecc71',
     'lod':     '#9b59b6', 'bg_dark': '#0a0d14', 'bg_axes': '#0f1520',
-    'grid':    '#1e2840', 'text':    '#7a8aaa'
+    'grid':    '#1e2840', 'text':    '#7a8aaa',
+    'woda':    '#00e5ff',
 }
 
 fig = plt.figure(figsize=(18, 11))
@@ -311,6 +333,7 @@ ax2_stan = ax2.twinx()
 ax2_stan.tick_params(colors=colors['snieg'], labelsize=9)
 line_snieg, = ax2_stan.plot([], [], color=colors['snieg'], linewidth=2, label='Śnieg na szynie (mm)')
 line_lod,   = ax2_stan.plot([], [], color=colors['lod'], linewidth=2, linestyle='-.', label='Lód na szynie (mm)')
+line_woda,  = ax2_stan.plot([], [], color=colors['woda'], linewidth=2, linestyle=':', label='Woda na szynie (mm)')
 ax2_stan.set_ylabel('Grubość warstwy (mm)', color=colors['snieg'], fontweight='bold')
 
 ax1.legend(loc='upper left', fontsize=9, facecolor='#151c2e', labelcolor='white', framealpha=0.8)
@@ -356,6 +379,7 @@ def format_axes():
     line_opad.set_data(sub_t, df_resampled['PRECIP_opad_1s'] * 900)
     line_snieg.set_data(sub_t, df_resampled['Snieg_na_szynie_mm'])
     line_lod.set_data(sub_t, df_resampled['Lod_na_szynie_mm'])
+    line_woda.set_data(sub_t, df_resampled['Woda_na_szynie_mm'])
 
     ax1.set_xlim(x0, x1)
     try:
@@ -363,7 +387,7 @@ def format_axes():
         y1_max = max(df_resampled['HRT_temp_grzana'].max(), df_resampled['CRT_temp_niegrzana'].max()) + 2
         ax1.set_ylim(y1_min, y1_max)
         
-        y2_max = max(df_resampled['Snieg_na_szynie_mm'].max(), df_resampled['Lod_na_szynie_mm'].max())
+        y2_max = max(df_resampled['Snieg_na_szynie_mm'].max(), df_resampled['Lod_na_szynie_mm'].max(), df_resampled['Woda_na_szynie_mm'].max())
         ax2_stan.set_ylim(-0.2, max(y2_max + 0.5, 2.0))
         
         y2_opad_max = (df_resampled['PRECIP_opad_1s'] * 900).max()

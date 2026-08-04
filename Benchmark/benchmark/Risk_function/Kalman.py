@@ -137,6 +137,7 @@ def run_kalman_forecast(file_path):
     forecaster = KalmanTemperatureForecaster()  # Tworzymy obiekt prognozujący.
     step_minutes = 10  # Kroki prognozy są ustawione na 10 minut.
     horizon_steps = 12  # Dwie godziny = 12 punktów po 10 minut.
+
     rolling_history_points = min(36, len(train_df))  # Ograniczamy pamięć do kilku godzin, żeby model nie był zbyt „ciężki”.
     rolling_forecasts = []  # Lista do składania prognoz z kolejnych godzin.
 
