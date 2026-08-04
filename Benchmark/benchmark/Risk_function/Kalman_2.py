@@ -3,13 +3,32 @@ import matplotlib.pyplot as plt  # Biblioteka do rysowania wykresów końcowych.
 import numpy as np  # Obliczenia numeryczne, macierze i maski logiczne.
 import pandas as pd  # Wczytywanie, czyszczenie i resampling danych.
 
+# ==========================================
+# ⚙️ GLOBALNA KONFIGURACJA PARAMETRÓW
+# ==========================================
+PROCESS_VARIANCE = 0.05       # Szum procesu: jak bardzo temperatura może sama „dryfować”.
+MEASUREMENT_VARIANCE = 0.25   # Szum pomiaru: jak bardzo odczyt może być niedokładny.
+STEP_MINUTES = 15             # Czas trwania pojedynczego kroku prognozy (w minutach).
+HORIZON_STEPS = 8             # Liczba próbek w horyzoncie prognozy (8 próbek * 15 min = 2 godziny).
+MAX_ROLLING_HISTORY = 36      # Maksymalna liczba punktów historii brana pod uwagę przez model.
+
+# Ścieżka do pliku konfigurowana globalnie na górze pliku
+FILE_PATH = os.path.normpath(
+    os.path.join(
+        os.path.dirname(__file__),
+        '..',
+        'Pogoda_pomiary_15_minut',
+        'suwalki_pogoda_15_min_model_2010.csv',
+    )
+)
+
 
 # Ta klasa enkapsuluje cały model prognozy temperatury oparty o filtr Kalmana.
 class KalmanTemperatureForecaster:
     # Konstruktor ustawia parametry modelu, czyli jak bardzo ufamy dynamice i pomiarom.
-    def __init__(self, process_variance=0.05, measurement_variance=0.25):
-        self.process_variance = process_variance  # Szum procesu: jak bardzo temperatura może sama „dryfować”.
-        self.measurement_variance = measurement_variance  # Szum pomiaru: jak bardzo odczyt może być niedokładny.
+    def __init__(self, process_variance=PROCESS_VARIANCE, measurement_variance=MEASUREMENT_VARIANCE):
+        self.process_variance = process_variance  # Szum procesu.
+        self.measurement_variance = measurement_variance  # Szum pomiaru.
 
     # Funkcja pomocnicza zamienia wejście na czystą serię liczbową.
     @staticmethod
@@ -62,7 +81,7 @@ class KalmanTemperatureForecaster:
         return forecasts  # Oddajemy listę wartości temperatury w przyszłości, krok po kroku.
 
     # Ta metoda bierze dowolny wycinek danych i zwraca prognozę z osią czasu.
-    def forecast_from_frame(self, weather_df, temp_col='temperatura_powietrza_C', steps=None, history_points=None, step_minutes=10):
+    def forecast_from_frame(self, weather_df, temp_col='temperatura_powietrza_C', steps=None, history_points=None, step_minutes=STEP_MINUTES):
         if weather_df is None or len(weather_df) == 0:  # Gdy nie ma danych, zwracamy pusty wynik.
             return {'timestamps': [], temp_col: []}  # Pusty wynik, gdy wejście nie istnieje.
 
@@ -77,12 +96,12 @@ class KalmanTemperatureForecaster:
             raise ValueError(f'Brak kolumny {temp_col} w danych')  # Temperatura jest jedynym wejściem do modelu.
 
         if history_points is None:  # Jeśli nie podano długości historii, ustawiamy sensowny domyślny limit.
-            history_points = max(2, min(96, len(df)))  # Domyślnie bierzemy rozsądną porcję historii.
+            history_points = max(2, min(MAX_ROLLING_HISTORY, len(df)))  # Domyślnie bierzemy rozsądną porcję historii.
         history_points = max(2, min(history_points, len(df)))  # Historia musi być przynajmniej dwupunktowa i nie dłuższa niż dane.
         history = df[[temp_col]].tail(history_points)  # Wycinamy ostatni fragment danych jako pamięć modelu.
 
         if steps is None:  # Jeśli nie podano liczby kroków, ustawiamy ją na długość dostarczonego wycinka.
-            steps = len(df)  # Gdy nie podano horyzontu, przyjmujemy tyle kroków, ile ma wycinek.
+            steps = HORIZON_STEPS  # Gdy nie podano horyzontu, przyjzymy z konfiguracji.
 
         last_timestamp = history.index[-1]  # Bierzemy ostatni znany moment czasu.
         step_delta = pd.Timedelta(minutes=int(step_minutes))  # Definiujemy, ile czasu mija między punktami prognozy.
@@ -120,25 +139,26 @@ def load_temperature_data(file_path):
 def run_kalman_forecast(file_path):
     df = load_temperature_data(file_path)  # Ładujemy i oczyszczamy dane wejściowe.
 
-    df_10min = df[['temperatura_powietrza_C']].resample('10min').mean().interpolate(method='time')  # Budujemy siatkę 10-minutową i uzupełniamy ją czasowo.
+    # Budujemy siatkę 15-minutową zgodnie z wymaganiem (8 próbek w okresie 2 godzin)
+    freq_str = f'{STEP_MINUTES}min'
+    df_resampled = df[['temperatura_powietrza_C']].resample(freq_str).mean().interpolate(method='time')  # Budujemy siatkę i uzupełniamy ją czasowo.
 
-    if len(df_10min) < 2:  # Bez minimum dwóch punktów nie da się ustawić trendu.
+    if len(df_resampled) < 2:  # Bez minimum dwóch punktów nie da się ustawić trendu.
         raise ValueError('Za mało danych, żeby uruchomić filtr Kalmana')  # Bez historii model jest zbyt słaby.
 
-    first_timestamp = df_10min.index.min()  # Najwcześniejszy znacznik czasu w zbiorze.
+    first_timestamp = df_resampled.index.min()  # Najwcześniejszy znacznik czasu w zbiorze.
     first_hour_end = first_timestamp + pd.Timedelta(hours=1)  # Początkowy warm-up: pierwsza godzina historii.
 
-    train_df = df_10min[df_10min.index < first_hour_end].copy()  # Pierwsza godzina służy jako historia startowa filtra.
-    future_df = df_10min[df_10min.index >= first_hour_end].copy()  # Wszystko po tej granicy służy do testu i wizualizacji.
+    train_df = df_resampled[df_resampled.index < first_hour_end].copy()  # Pierwsza godzina służy jako historia startowa filtra.
+    future_df = df_resampled[df_resampled.index >= first_hour_end].copy()  # Wszystko po tej granicy służy do testu i wizualizacji.
 
     if len(train_df) < 2:  # Bez minimum dwóch punktów nie da się ustawić trendu.
         raise ValueError('Za mało danych z pierwszej godziny, żeby uruchomić filtr Kalmana')  # Bez historii model jest zbyt słaby.
 
     forecaster = KalmanTemperatureForecaster()  # Tworzymy obiekt prognozujący.
-    step_minutes = 10  # Kroki prognozy są ustawione na 10 minut.
-    horizon_steps = 12  # Dwie godziny = 12 punktów po 10 minut.
-
-    rolling_history_points = min(36, len(train_df))  # Ograniczamy pamięć do kilku godzin, żeby model nie był zbyt „ciężki”.
+    horizon_steps = HORIZON_STEPS  # Liczba kroków prognozy (8 próbek).
+    step_minutes = STEP_MINUTES  # Krok prognozy (15 minut).
+    rolling_history_points = min(MAX_ROLLING_HISTORY, len(train_df))  # Ograniczamy pamięć do kilku godzin, żeby model nie był zbyt „ciężki”.
     rolling_forecasts = []  # Lista do składania prognoz z kolejnych godzin.
 
     if len(future_df) < 1:  # Jeśli po pierwszej godzinie nie ma żadnych danych, nie ma czego pokazywać.
@@ -149,7 +169,7 @@ def run_kalman_forecast(file_path):
     simulation_end = segment_end + pd.Timedelta(hours=1)  # Jeszcze jedna godzina prognozy po końcu danych.
 
     while segment_start <= simulation_end:  # Pętla idzie godzinami aż do końca symulacji.
-        segment_history = df_10min[df_10min.index < segment_start].tail(rolling_history_points)  # Bierzemy historię sprzed bieżącej godziny.
+        segment_history = df_resampled[df_resampled.index < segment_start].tail(rolling_history_points)  # Bierzemy historię sprzed bieżącej godziny.
         if len(segment_history) < 2:  # Jeśli historia jest za krótka, kończymy.
             break  # Jeżeli nie ma historii, nie ma sensu dalej liczyć.
 
@@ -161,7 +181,7 @@ def run_kalman_forecast(file_path):
             step_minutes=step_minutes,
         )
 
-        for idx, timestamp in enumerate(forecast['timestamps']):  # Przechodzimy po punktach co 10 minut.
+        for idx, timestamp in enumerate(forecast['timestamps']):  # Przechodzimy po punktach co 15 minut.
             if timestamp > simulation_end:  # Nie chcemy wykraczać poza dodatkową godzinę po CSV.
                 break  # Kończymy, gdy wyszliśmy poza zakres wizualizacji.
 
@@ -171,6 +191,7 @@ def run_kalman_forecast(file_path):
                 'predicted': float(forecast['temperatura_powietrza_C'][idx]),
                 'actual': actual_value,
                 'segment_start': segment_start,  # Początek godziny, z której zrobiono prognozę.
+                'step_index': idx,  # Numer próbki w horyzoncie (od 0 do horizon_steps - 1) do nowej metryki błędu po próbkach.
             })
 
         segment_start = segment_start + pd.Timedelta(hours=1)  # Przesuwamy się o jedną godzinę i odświeżamy stan.
@@ -180,13 +201,14 @@ def run_kalman_forecast(file_path):
 
     rolling_df = pd.DataFrame(rolling_forecasts)  # Sklejamy wszystkie punkty prognozy do jednej ramki.
     rolling_df = rolling_df.sort_values('Timestamp')  # Sortujemy po czasie.
-    rolling_df = rolling_df.drop_duplicates(subset='Timestamp')  # Usuwamy ewentualne powtórki timestampów.
+    rolling_df = rolling_df.drop_duplicates(subset='Timestamp').reset_index(drop=True)  # RESET INDEKSU
     predicted = rolling_df['predicted'].to_numpy(dtype=float)  # Zmieniamy prognozy na tablicę NumPy.
     timestamps = pd.to_datetime(rolling_df['Timestamp'])  # Oś czasu dla wszystkich punktów prognozy.
     actual_series = rolling_df['actual'].astype(float)  # Wartości rzeczywiste tam, gdzie dało się je pobrać.
     valid_mask = actual_series.notna().to_numpy()  # Maska pokazująca, gdzie mamy dane prawdziwe.
     actual = actual_series.to_numpy(dtype=float)  # Zmieniamy serię rzeczywistą na tablicę NumPy.
     errors = np.abs(actual[valid_mask] - predicted[valid_mask]) if valid_mask.any() else np.array([])  # Liczymy błąd tylko tam, gdzie mamy porównanie.
+    
     if valid_mask.any():
         actual_valid = actual[valid_mask]
         predicted_valid = predicted[valid_mask]
@@ -195,6 +217,7 @@ def run_kalman_forecast(file_path):
         r_squared = 1.0 - (ss_res / ss_tot) if ss_tot > 0 else 1.0
     else:
         r_squared = np.nan
+
     rolling_df = rolling_df.copy()
     rolling_df['day'] = rolling_df['Timestamp'].dt.floor('D')
     daily_errors = []
@@ -208,11 +231,11 @@ def run_kalman_forecast(file_path):
                 'points': int(len(day_errors)),
             })
 
-    print('\n🔮 Prognoza Kalmana temperatury co 10 minut, odświeżana co godzinę:')  # Nagłówek w konsoli.
+    print('\n🔮 Prognoza Kalmana temperatury co 15 minut (8 próbek w horyzoncie 2 godzin), odświeżana co godzinę:')  # Nagłówek w konsoli.
     print(f"{'Czas':<20} | {'Temp prognoza [°C]':<18} | {'Temp rzeczywista [°C]':<20} | {'Błąd [°C]':<10}")  # Tabela kolumn.
     print('-' * 78)  # Linia oddzielająca nagłówek od danych.
 
-    preview_steps = min(6, len(timestamps))  # Pokazujemy tylko kilka pierwszych wierszy, żeby nie zaśmiecać konsoli.
+    preview_steps = min(8, len(timestamps))  # Pokazujemy próbki z horyzontu (np. pierwsze 8).
     for idx in range(preview_steps):  # Iterujemy po pierwszych punktach prognozy.
         actual_text = f"{actual[idx]:20.2f}" if not np.isnan(actual[idx]) else f"{'brak':>20}"  # Tekst z wartością rzeczywistą albo informacją o braku.
         error_text = f"{abs(actual[idx] - predicted[idx]):10.2f}" if not np.isnan(actual[idx]) else f"{'brak':>10}"  # Tekst z błędem lub jego brakiem.
@@ -223,23 +246,40 @@ def run_kalman_forecast(file_path):
 
     if len(errors) > 0:  # Jeżeli istnieją punkty porównawcze, liczymy statystyki błędu.
         print('\n📏 Backtest prognozy po pierwszej dobie:')  # Sekcja z jakościowym podsumowaniem.
-        print(f'- MAE: {errors.mean():.3f} °C')  # Średni błąd bezwzględny: średnia odległość między prognozą a prawdą.
+        print(f'- MAE (ogólny): {errors.mean():.3f} °C')  # Średni błąd bezwzględny.
         print(f'- Maksymalny błąd: {errors.max():.3f} °C')  # Najgorszy odchył w całym zbiorze.
-        print(f'- R^2: {r_squared:.3f}')  # Współczynnik determinacji: jak dobrze prognoza dopasowuje rzeczywiste dane.
+        print(f'- R^2: {r_squared:.3f}')  # Współczynnik determinacji.
+        
+        # --- Średni błąd (MAE) oraz MAKSYMALNY BŁĄD dla każdej próbki z horyzontu (1, 2, 3...) osobno ---
+        print('\n📈 Błędy (MAE oraz Maksymalny błąd) dla poszczególnych próbek w horyzoncie prognozy (co 15 min):')
+        for s_idx in range(horizon_steps):
+            step_subset = rolling_df[(rolling_df['step_index'] == s_idx) & (rolling_df['actual'].notna())]
+            if len(step_subset) > 0:
+                step_actuals = step_subset['actual'].to_numpy(dtype=float)
+                step_preds = step_subset['predicted'].to_numpy(dtype=float)
+                step_abs_errors = np.abs(step_actuals - step_preds)
+                step_mae = float(np.mean(step_abs_errors))
+                step_max_err = float(np.max(step_abs_errors))
+                time_offset = (s_idx + 1) * step_minutes
+                print(f"  - Próbka {s_idx + 1} (za {time_offset:3d} min): MAE = {step_mae:.3f} °C | Max error = {step_max_err:.3f} °C (liczba próbek testowych: {len(step_subset)})")
+            else:
+                time_offset = (s_idx + 1) * step_minutes
+                print(f"  - Próbka {s_idx + 1} (za {time_offset:3d} min): brak danych testowych")
+
         if daily_errors:
             print('\n📅 Błąd dla każdej doby osobno:')
             for item in daily_errors:
                 print(f"- {item['day'].strftime('%Y-%m-%d')}: MAE={item['mae']:.3f} °C, max_error={item['max_error']:.3f} °C, punkty={item['points']}")
 
     plt.figure(figsize=(14, 6))  # Tworzymy nowe okno wykresu.
-    plt.plot(df.index, df['temperatura_powietrza_C'], label='Rzeczywista temperatura (15 min)', color='green', linewidth=2, alpha=0.75)  # Surowe dane 15-minutowe.
-    plt.plot(df_10min.index, df_10min['temperatura_powietrza_C'], label='Rzeczywista temperatura 10 min', color='green', linewidth=1.0, alpha=0.25)  # Gęstsza wersja rzeczywistych danych.
+    plt.plot(df.index, df['temperatura_powietrza_C'], label='Rzeczywista temperatura (surowe dane)', color='green', linewidth=2, alpha=0.75)  # Surowe dane 15-minutowe.
+    plt.plot(df_resampled.index, df_resampled['temperatura_powietrza_C'], label=f'Rzeczywista temperatura ({STEP_MINUTES} min)', color='lightgreen', linewidth=1.0, alpha=0.4)  # Próbkowana wersja danych.
     plt.plot(timestamps, predicted, color='red', linestyle='--', linewidth=1.2, alpha=0.7)  # Łączymy punkty prognozy linią.
-    plt.scatter(timestamps, predicted, label='Prognoza Kalmana co 10 min', color='red', s=24, zorder=3)  # Zaznaczamy same punkty prognozy.
+    plt.scatter(timestamps, predicted, label=f'Prognoza Kalmana co {STEP_MINUTES} min', color='red', s=24, zorder=3)  # Zaznaczamy same punkty prognozy.
     if np.isnan(actual).any():  # Jeśli część punktów wychodzi poza CSV, oznaczamy je osobno.
         forecast_only_mask = np.isnan(actual)  # Maskujemy punkty bez rzeczywistej temperatury.
         plt.scatter(timestamps[forecast_only_mask], predicted[forecast_only_mask], color='darkred', s=32, zorder=4, label='Prognoza po końcu CSV')  # Pokazujemy odcinek poza danymi.
-    plt.title('Temperatura z całego okresu i prognoza Kalmana od pierwszej godziny historii')  # Tytuł wykresu.
+    plt.title('Temperatura z całego okresu i prognoza Kalmana (horyzont 8 kroków co 15 minut)')  # Tytuł wykresu.
     plt.xlabel('Czas')  # Opis osi X.
     plt.ylabel('Temperatura [°C]')  # Opis osi Y.
     plt.grid(True, linestyle=':', alpha=0.6)  # Siatka pomaga czytać wykres.
@@ -250,12 +290,4 @@ def run_kalman_forecast(file_path):
 
 # Punkt startowy programu, gdy plik jest uruchamiany bezpośrednio.
 if __name__ == '__main__':
-    sciezka_do_pliku = os.path.normpath(  # Normalizujemy ścieżkę do pliku wejściowego.
-        os.path.join(  # Sklejamy ścieżkę z folderów względem bieżącego pliku.
-            os.path.dirname(__file__),  # Bierzemy katalog, w którym leży ten skrypt.
-            '..',  # Wychodzimy poziom wyżej do katalogu benchmark.
-            'Pogoda_pomiary_15_minut',  # Wchodzimy do folderu z danymi pogodowymi.
-            'suwalki_pogoda_15_min_model_2010.csv',  # Wskazujemy konkretny plik CSV.
-        )
-    )
-    run_kalman_forecast(sciezka_do_pliku)  # Uruchamiamy cały eksperyment na wskazanym pliku.
+    run_kalman_forecast(FILE_PATH)
