@@ -1,0 +1,60 @@
+{
+  "will_precipitate": false,
+  "lead_time_min": null,
+  "details": {
+    "type": "none",
+    "precipitation_amount_mm_15min": 0.0,
+    "snow_water_equivalent_mm": 0.0,
+    "estimated_fresh_snow_depth_cm": 0.0,
+    "horizons": [
+      {
+        "horizon_min": 15,
+        "will_precipitate": false,
+        "probability": 0.043784,
+        "precipitation_type": "none",
+        "precipitation_amount_mm_15min": 0.0,
+        "predicted_air_temperature_C": 7.465,
+        "predicted_dew_point_C": 4.87,
+        "predicted_wet_bulb_C": 5.826,
+        "snow_water_equivalent_mm": 0.0,
+        "estimated_fresh_snow_depth_cm": 0.0
+      },
+      {
+        "horizon_min": 30,
+        "will_precipitate": false,
+        "probability": 0.023807,
+        "precipitation_type": "none",
+        "precipitation_amount_mm_15min": 0.0,
+        "predicted_air_temperature_C": 7.43,
+        "predicted_dew_point_C": 4.94,
+        "predicted_wet_bulb_C": 5.848,
+        "snow_water_equivalent_mm": 0.0,
+        "estimated_fresh_snow_depth_cm": 0.0
+      },
+      {
+        "horizon_min": 45,
+        "will_precipitate": false,
+        "probability": 0.024625,
+        "precipitation_type": "none",
+        "precipitation_amount_mm_15min": 0.0,
+        "predicted_air_temperature_C": 7.395,
+        "predicted_dew_point_C": 5.01,
+        "predicted_wet_bulb_C": 5.871,
+        "snow_water_equivalent_mm": 0.0,
+        "estimated_fresh_snow_depth_cm": 0.0
+      },
+      {
+        "horizon_min": 60,
+        "will_precipitate": false,
+        "probability": 0.090474,
+        "precipitation_type": "none",
+        "precipitation_amount_mm_15min": 0.0,
+        "predicted_air_temperature_C": 7.36,
+        "predicted_dew_point_C": 5.08,
+        "predicted_wet_bulb_C": 5.894,
+        "snow_water_equivalent_mm": 0.0,
+        "estimated_fresh_snow_depth_cm": 0.0
+      }
+    ]
+  }
+}

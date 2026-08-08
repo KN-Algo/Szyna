@@ -1,0 +1,14 @@
+{
+  "dataset_name": "wroclaw_2024_2025",
+  "rows": 14496,
+  "start": "2024-11-01T00:00:00",
+  "end": "2025-03-31T23:45:00",
+  "horizons_min": [
+    15,
+    30,
+    45,
+    60
+  ],
+  "phase_label_is_heuristic": true,
+  "lightgbm_available": false
+}
