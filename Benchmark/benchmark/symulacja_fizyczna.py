@@ -218,10 +218,24 @@ def uruchom_kontroler(name, controller, method_name, df_1s, hrt_weather_all,
 
     x_h = np.zeros((A_hd.shape[0], 1))
     current_hrt = 0.7
-    u_history = []
-    historia = []
     snow_depth_history = np.zeros(len(df_1s))
     power_history = np.zeros(len(df_1s))
+
+    # Wyniki per krok jako PREALOKOWANE tablice numpy - NIE lista słowników
+    # Pythona jak poprzednio. Na pełnym zakresie dat (~13 mln kroków/lokalizację)
+    # lista słowników (9 pól, boxed floaty) mierzyła realnie ~9.4GB szczytowo NA
+    # JEDNO zadanie (zmierzone bezpośrednio - stąd OOM na klastrze przy 48
+    # równoległych procesach i za ciasno dobranym --mem). Tablice numpy dają
+    # dokładnie te same wartości przy ułamku tej pamięci (8 tablic float64 x
+    # 13M x 8B ≈ 830MB zamiast ~9GB).
+    hist_at = np.empty(len(df_1s))
+    hist_hrt = np.empty(len(df_1s))
+    hist_crt = np.empty(len(df_1s))
+    hist_moc = np.empty(len(df_1s))
+    hist_snieg = np.empty(len(df_1s))
+    hist_lod = np.empty(len(df_1s))
+    hist_precip_1s = np.empty(len(df_1s))
+    hist_snow_1s = np.empty(len(df_1s))
 
     total_steps = len(df_1s)
     t0 = time.time()
@@ -290,11 +304,13 @@ def uruchom_kontroler(name, controller, method_name, df_1s, hrt_weather_all,
                 zabezpieczen_uzytych += 1
 
         power_history[index] = power_percent
-        u_curr = power_percent / 100.0
-        u_history.append(u_curr)
 
+        # u_delayed czytany wstecz z power_history zamiast osobnej listy
+        # u_history - power_history[index] jest już zapisane (linia wyżej), a
+        # index - punkty_opoznienia < index był zapisany we wcześniejszym
+        # obiegu pętli, więc odczyt jest bezpieczny i identyczny co do wartości.
         if index >= punkty_opoznienia:
-            u_delayed = u_history[index - punkty_opoznienia]
+            u_delayed = power_history[index - punkty_opoznienia] / 100.0
         else:
             u_delayed = 0.0
 
@@ -313,17 +329,14 @@ def uruchom_kontroler(name, controller, method_name, df_1s, hrt_weather_all,
             switches += 1
         prev_power = power_percent
 
-        historia.append({
-            'Timestamp': ts,
-            'AT': at_temp,
-            'HRT': current_hrt,
-            'CRT': current_crt,
-            'Moc_procent': power_percent,
-            'Snieg_mm': snow_mm,
-            'Lod_mm': ice_mm,
-            'PRECIP_opad_1s': precip_1s,
-            'SNOW_snieg_1s': snow_val,
-        })
+        hist_at[index] = at_temp
+        hist_hrt[index] = current_hrt
+        hist_crt[index] = current_crt
+        hist_moc[index] = power_percent
+        hist_snieg[index] = snow_mm
+        hist_lod[index] = ice_mm
+        hist_precip_1s[index] = precip_1s
+        hist_snow_1s[index] = snow_val
 
         if print_progress:
             is_last = index == total_steps - 1
@@ -338,7 +351,17 @@ def uruchom_kontroler(name, controller, method_name, df_1s, hrt_weather_all,
                 print(f"\r  [{name}] [{bar}] {pct:6.2f}% | upłynęło {elapsed:7.1f}s | ETA {eta:7.1f}s",
                       end='\n' if is_last else '', flush=True)
 
-    df_hist = pd.DataFrame(historia)
+    df_hist = pd.DataFrame({
+        'Timestamp': timestamps,
+        'AT': hist_at,
+        'HRT': hist_hrt,
+        'CRT': hist_crt,
+        'Moc_procent': hist_moc,
+        'Snieg_mm': hist_snieg,
+        'Lod_mm': hist_lod,
+        'PRECIP_opad_1s': hist_precip_1s,
+        'SNOW_snieg_1s': hist_snow_1s,
+    })
     df_hist['Energia_kWh_1s'] = (df_hist['Moc_procent'] / 100.0) * MOC_ZAMIANOWA_GRZALKI_KW * (dt / 3600.0)
     df_hist['Energia_kWh_skumulowana'] = df_hist['Energia_kWh_1s'].cumsum()
 
