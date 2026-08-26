@@ -226,5 +226,5 @@ def run_engineering_benchmark(file_path):
     print("=" * 75)
 
 if __name__ == "__main__":
-    sciezka = "Benchmark\\benchmark\\Pogoda_pomiary_15_minut\\suwalki_pogoda_15_min_model_2010.csv"
+    sciezka = "Benchmark\\benchmark\\Pogoda_pomiary_15_minut\\suwalki_15min_2010.csv"
     run_engineering_benchmark(sciezka)

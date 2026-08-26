@@ -407,5 +407,5 @@ def run_validation(file_path):
 
 if __name__ == "__main__":
     # Nazwa Twojego surowego pliku CSV
-    sciezka_do_pliku = "Benchmark\\benchmark\\Pogoda_pomiary_15_minut\\suwalki_pogoda_15_min_model_2010.csv" 
+    sciezka_do_pliku = "Benchmark\\benchmark\\Pogoda_pomiary_15_minut\\suwalki_15min_2010.csv"
     run_validation(sciezka_do_pliku)

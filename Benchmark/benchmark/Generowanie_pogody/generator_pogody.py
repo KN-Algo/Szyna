@@ -1,3 +1,4 @@
+import os
 import requests
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -94,8 +95,12 @@ def pokaz_wykres_kontrolny_snieg(df):
 df_pogoda = get_snowy_historical_forecast()
 
 if df_pogoda is not None:
-    # 💡 Zapisujemy dokładnie pod taką samą nazwą, jakiej szuka Twój zintegrowany skrypt!
-    output_file = "suwalki_pogoda_15_min_model.csv" 
+    # 💡 Nazwa zgodna z ujednoliconym wzorcem folderu Pogoda_pomiary_15_minut:
+    # {lokalizacja}_{rozdzielczosc}min_{rok}.csv
+    katalog_wyjsciowy = os.path.normpath(
+        os.path.join(os.path.dirname(__file__), '..', 'Pogoda_pomiary_15_minut')
+    )
+    output_file = os.path.join(katalog_wyjsciowy, "suwalki_15min_2023.csv")
     df_pogoda.to_csv(output_file, index=False)
     print(f"\n🎯 ZAKOŃCZONO! Ekstremalnie śnieżne dane zapisane w: {output_file}")
     

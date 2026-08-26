@@ -254,7 +254,7 @@ if __name__ == '__main__':
             os.path.dirname(__file__),  # Bierzemy katalog, w którym leży ten skrypt.
             '..',  # Wychodzimy poziom wyżej do katalogu benchmark.
             'Pogoda_pomiary_15_minut',  # Wchodzimy do folderu z danymi pogodowymi.
-            'suwalki_pogoda_15_min_model_2010.csv',  # Wskazujemy konkretny plik CSV.
+            'suwalki_15min_2010.csv',  # Wskazujemy konkretny plik CSV.
         )
     )
     run_kalman_forecast(sciezka_do_pliku)  # Uruchamiamy cały eksperyment na wskazanym pliku.

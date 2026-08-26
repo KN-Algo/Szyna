@@ -18,7 +18,7 @@ FILE_PATH = os.path.normpath(
         os.path.dirname(__file__),
         '..',
         'Pogoda_pomiary_15_minut',
-        'suwalki_pogoda_15_min_model_2010.csv',
+        'suwalki_15min_2010.csv',
     )
 )
 
