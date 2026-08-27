@@ -15,6 +15,7 @@ class KontrolerFuzzy2v2:
     def __init__(self, t_zadana=3.0, max_switches_per_day=12, **kwargs):
         self.T_ZADANA = t_zadana
         self.max_switches_per_day = max_switches_per_day
+        self._flops_licznik = 0  # Licznik RZECZYWISTYCH FLOPs - patrz rdzen_kontrolera.KontrolerBazowy._dodaj_flopy.
 
     def compute_control(self, row_data):
         hrt = float(row_data['HRT_temp_grzana'])
@@ -26,4 +27,5 @@ class KontrolerFuzzy2v2:
 
         blad_T = self.T_ZADANA - hrt
         wynik = wnioskowanie_fl2v2(blad_T, hrt, precip, jest_snieg, jest_deszcz)
+        self._flops_licznik += 48  # Silnik FL2v2 (4 funkcje przynależności + 7 reguł Sugeno).
         return binaryzuj(wynik)

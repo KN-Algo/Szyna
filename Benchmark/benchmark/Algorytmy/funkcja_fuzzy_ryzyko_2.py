@@ -32,6 +32,7 @@ class KontrolerFuzzyRyzyko2(KontrolerRyzykaBazowy):
             blad_T = target_temperature - hrt_temp
             wynik = wnioskowanie_fl_podstawowe(blad_T, hrt_temp, jest_snieg, jest_deszcz)
             power_percent = binaryzuj(wynik)
+            self._dodaj_flopy(40)  # Silnik FL1/FL2.
 
         self._krok_modelu(power_percent)
 

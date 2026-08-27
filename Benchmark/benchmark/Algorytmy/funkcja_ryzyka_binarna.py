@@ -73,6 +73,8 @@ class KontrolerRyzykaBinarny(KontrolerRyzykaBazowy):
                 self._risk_last_switch_time = timestamp
             # W przeciwnym razie limit dobowy wyczerpany - zostajemy przy poprzednim stanie.
 
+        self._dodaj_flopy(15)  # Histereza + limit przełączeń (na wierzchu setpointu z _evaluate_risk_setpoint).
+
         diagnostics = {
             'target_temperature': target_temperature,
             'need_heat': need_heat,

@@ -66,6 +66,8 @@ class KontrolerRyzykaBinarnyOpad(KontrolerRyzykaOpadBazowy):
                 self.risk_switch_count_today += 1
                 self._risk_last_switch_time = timestamp
 
+        self._dodaj_flopy(15)  # Histereza + limit przełączeń (na wierzchu setpointu z _evaluate_risk_setpoint_z_opadem).
+
         diagnostics = {
             'target_temperature': target_temperature,
             'need_heat': need_heat,

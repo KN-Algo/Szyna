@@ -121,6 +121,7 @@ class KontrolerRyzykaPID(KontrolerRyzykaBazowy):
             self._pid_prev_time = timestamp
 
         self._krok_modelu(power_percent)
+        self._dodaj_flopy(15)  # Formuła PI(D) + anti-windup (na wierzchu setpointu/cyfrowego bliźniaka).
 
         diagnostics = {
             'target_temperature': target_temperature,

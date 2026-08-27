@@ -52,6 +52,7 @@ class AutomatPogodowyNorma:
     def __init__(self, max_switches_per_day=12):
         self.heating_on = False
         self.row_data = RowDataNorma()
+        self._flops_licznik = 0  # Licznik RZECZYWISTYCH FLOPs - patrz rdzen_kontrolera.KontrolerBazowy._dodaj_flopy.
 
         # --- LIMIT PRZEŁĄCZEŃ ---
         # Norma nie opisuje limitu dobowego przełączeń - dodany tu wyłącznie
@@ -130,4 +131,5 @@ class AutomatPogodowyNorma:
             # W przeciwnym razie limit wyczerpany - zostajemy przy poprzednim stanie.
 
         # 5. Wyjście binarne: automat pogodowy wg normy zna tylko załącz/wyłącz.
+        self._flops_licznik += 18  # Porównania progów + logika stanu (stały koszt/krok).
         return 100.0 if self.heating_on else 0.0

@@ -171,6 +171,28 @@ class KontrolerBazowy:
         self.row_data = RowData()
         self.sensor_history = []  # Historia odczytów - atrybut instancji (nie klasy!), żeby nie był współdzielony między obiektami.
 
+        # --- KROK STEROWANIA [s] - co ile sekund symulacja FAKTYCZNIE woła
+        # metodę decyzyjną tego kontrolera (ustawiane z zewnątrz przez
+        # symulacja_fizyczna.uruchom_kontroler zaraz po utworzeniu instancji -
+        # `controller._dt_sterowania = dt`). Domyślnie 1.0 - DOKŁADNIE
+        # zachowanie sprzed dodania tego parametru. Używane wyłącznie do
+        # poprawnego przeskalowania "cyfrowego bliźniaka" (patrz
+        # _zbuduj_model_z_autotestu w funkcja_ryzyka_wspolne._autotest_startowy
+        # i _evaluate_risk_setpoint) - bez tego model wewnętrznie zakładałby
+        # dt=1s niezależnie od realnego kroku symulacji i rozjeżdżałby się z
+        # upływem czasu przy dt != 1.0. ---
+        self._dt_sterowania = 1.0
+
+        # --- LICZNIK OPERACJI ZMIENNOPRZECINKOWYCH (FLOPs) - patrz _dodaj_flopy.
+        # W odróżnieniu od 'flops_na_krok' w rejestr_algorytmow.py (szacunek
+        # analityczny, stały na algorytm) to jest RZECZYWISTA, zmierzona liczba
+        # operacji wykonanych PRZEZ TĄ KONKRETNĄ instancję w TYM KONKRETNYM
+        # przebiegu - zależy od faktycznej długości historii/prognoz, nie tylko
+        # od typu algorytmu. Odczytywany na końcu przez
+        # symulacja_fizyczna.uruchom_kontroler i zapisywany jako
+        # stats['flops_rzeczywiste']. ---
+        self._flops_licznik = 0
+
         # --- STAN AUTOTESTU (identyfikacja obiektu skokiem temperatury) ---
         self.autotest_active = False        # Czy autotest jest właśnie w trakcie trwania.
         self.autotest_start_time = None     # Chwila (Timestamp) rozpoczęcia bieżącego autotestu.
@@ -215,6 +237,14 @@ class KontrolerBazowy:
         self._model_forecast_cache = None
         self._model_forecast_cache_time = None
 
+        # Ostatnia moc zwrócona przez autotest() (100% w trakcie testu, 0% w
+        # kroku, w którym się kończy) - patrz _autotest_startowy.
+        self._ostatnia_moc_autotestu = 100.0
+
+    def _dodaj_flopy(self, n):
+        """Dopisuje `n` do licznika RZECZYWIŚCIE wykonanych FLOPs (patrz __init__)."""
+        self._flops_licznik += n
+
     # --- Funkcja pomocnicza filtru Kalmana: zamienia wejście na czystą serię liczbową ---
     @staticmethod
     def _normalize_series(values):
@@ -234,6 +264,9 @@ class KontrolerBazowy:
 
         values_arr = series.to_numpy(dtype=np.float64)
         forecasts = _kalman_forecast_core(values_arr, int(steps), PROCESS_VARIANCE, MEASUREMENT_VARIANCE)
+        # ~20 FLOPs/próbka historii (aktualizacja stanu+kowariancji Kalmana) +
+        # ~7 FLOPs/krok prognozy w przód (patrz rozpiska w _kalman_forecast_core).
+        self._dodaj_flopy(len(values_arr) * 20 + int(steps) * 7)
         return forecasts.tolist()  # Oddajemy listę wartości temperatury w przyszłości, krok po kroku.
 
     def _append_sensor_history(self, reading):
@@ -307,11 +340,15 @@ class KontrolerBazowy:
         vals_arr = np.array(hist_values, dtype=np.float64)
 
         bin_means, bin_group_ids = _bin_average_core(bin_ids, vals_arr)
+        # ~3 FLOPs/próbka surowej historii (sumowanie w grupie + porównanie bin_id).
+        self._dodaj_flopy(len(bin_ids) * 3)
         if len(bin_means) < 2:
             return array
 
         full_bins = np.arange(bin_group_ids[0], bin_group_ids[-1] + 1)
         full_means = np.interp(full_bins, bin_group_ids, bin_means)
+        # ~2 FLOPs/bin interpolowany (np.interp - wyszukanie przedziału + interpolacja liniowa).
+        self._dodaj_flopy(len(full_bins) * 2)
         if len(full_means) < 2:
             return array
 
@@ -548,6 +585,9 @@ class KontrolerBazowy:
             u_delayed = 0.0
 
         self._model_x = self._model_A @ self._model_x + self._model_B * u_delayed
+        # Aktualizacja stanu: A@x (n^2 mnożeń + n*(n-1) dodawań) + B*u (n mnożeń + n dodawań), n = wymiar stanu.
+        n = self._model_A.shape[0]
+        self._dodaj_flopy(2 * n * n + 2 * n)
 
     def _prognoza_zanikania_ciepla(self, liczba_krokow):
         """
@@ -575,4 +615,57 @@ class KontrolerBazowy:
             # konwencja co scipy.signal.dlsim (x[k] to stan SPRZED kroku k).
             wyniki[i] = float((self._model_C @ x + self._model_D * u_delayed)[0, 0])
             x = self._model_A @ x + self._model_B * u_delayed
+        # Na iterację: C@x + D*u (~2n FLOPs) + A@x + B*u (~2n^2+2n FLOPs), n = wymiar stanu.
+        n = self._model_A.shape[0]
+        self._dodaj_flopy(liczba_krokow * (2 * n * n + 4 * n + 1))
         return wyniki
+
+    def _autotest_startowy(self, row_data):
+        """
+        Jednorazowy autotest PRZY STARCIE (patrz autotest() wyżej) - dopóki
+        self.autotest_result is None, wymusza pełne grzanie i zbiera próbki do
+        identyfikacji obiektu. Po zakończeniu (sukces LUB porażka, sprawdzane
+        raz) buduje "cyfrowy bliźniak" grzałki (_zbuduj_model_z_autotestu) do
+        użytku przez wywołującego - jeśli identyfikacja się nie powiedzie
+        (fit_ok=False), model NIE powstaje i _model_zidentyfikowany zostaje
+        False (wywołujący ma wtedy wrócić do zachowania bez cyfrowego
+        bliźniaka, dokładnie jak przed jego dodaniem).
+
+        Przeniesione tu (z pierwotnego funkcja_ryzyka_wspolne.KontrolerRyzykaBazowy)
+        żeby było dostępne dla KAŻDEGO kontrolera dziedziczącego KontrolerBazowy,
+        nie tylko rodziny funkcji ryzyka - np. funkcja_nauka_kary_pid_blizniak.py/
+        _ryzyko.py. Zero zmiany zachowania dla dotychczasowych użytkowników
+        (KontrolerRyzykaBazowy nadal go dziedziczy, tylko już nie definiuje
+        osobno).
+
+        Zwraca True, dopóki autotest trwa (wywołujący ma wtedy zwrócić moc z
+        tej metody i pominąć normalną logikę decyzyjną), False gdy jest już
+        zakończony (w tym LUB w którymś z poprzednich wywołań) - wtedy
+        wywołujący ma wykonać normalną logikę.
+        """
+        if self.autotest_result is not None:
+            return False
+
+        self._ostatnia_moc_autotestu, wynik = self.autotest(row_data)
+        if wynik is not None and wynik['fit_ok']:
+            # dt=self._dt_sterowania - cyfrowy bliźniak MUSI być dyskretyzowany
+            # tym samym krokiem, w jakim faktycznie będzie odpytywany
+            # (_krok_modelu wołane raz na każdą decyzję sterowania, nie raz na
+            # sekundę fizyki) - inaczej jego wewnętrzny zegar rozjeżdżałby się
+            # z rzeczywistym czasem przy kroku sterowania != 1s.
+            self._zbuduj_model_z_autotestu(wynik['K'], wynik['T1'], wynik['T2'], wynik['L'],
+                                            dt=self._dt_sterowania)
+            # Autotest grzeje CAŁY czas trwania testu pełną mocą (100%) od stanu
+            # zerowego (skok 0%->100%) - "przewijamy" świeżo zbudowanego
+            # cyfrowego bliźniaka przez DOKŁADNIE ten sam profil mocy, żeby jego
+            # stan (i linia opóźnienia) odpowiadał temu, co naprawdę dzieje się
+            # z obiektem W TEJ CHWILI, zamiast zaczynać "na zimno" (co
+            # fałszywie sugerowałoby zerowe ciepło resztkowe zaraz po
+            # zakończeniu kilkugodzinnego grzania pełną mocą). Liczba kroków =
+            # liczba RZECZYWISTYCH decyzji sterowania w czasie trwania testu
+            # (duration_s sekund / dt_sterowania sekund na decyzję), nie liczba
+            # sekund - każdy krok modelu pokrywa dt_sterowania sekund, nie 1s.
+            liczba_krokow_przewijania = int(round(wynik['duration_s'] / self._dt_sterowania))
+            for _ in range(liczba_krokow_przewijania):
+                self._krok_modelu(100.0)
+        return wynik is None

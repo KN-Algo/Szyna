@@ -32,7 +32,7 @@ NAZWA_PLIKU_CSV = os.path.join(BASE_DIR, "Pogoda_pomiary_15_minut", "suwalki_15m
 FOLDER_WYNIKOW = os.path.join(BASE_DIR, "wyniki")
 os.makedirs(FOLDER_WYNIKOW, exist_ok=True)
 
-MAX_SWITCHES_PER_DAY = 12
+MAX_SWITCHES_PER_DAY = 100  # budżet dzienny wywiedziony z życiowego budżetu przekaźnika (~500 000) - patrz test_wszystkie_rownolegle.py
 NAZWA_ALGORYTMU_NORMY = 'algorytm_z_normy'  # wyznacznik dopuszczalnej ilości śniegu
 
 # Kolor per algorytm generowany automatycznie z rejestru (a nie ręcznie wpisywany

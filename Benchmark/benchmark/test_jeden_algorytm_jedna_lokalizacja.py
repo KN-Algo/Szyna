@@ -33,7 +33,7 @@ from rejestr_algorytmow import ALGORYTMY, stworz_kontroler
 # ==============================================================================
 NAZWA_ALGORYTMU = 'risk_function_pid'
 
-MAX_SWITCHES_PER_DAY = 12
+MAX_SWITCHES_PER_DAY = 100  # budżet dzienny wywiedziony z życiowego budżetu przekaźnika (~500 000) - patrz test_wszystkie_rownolegle.py
 WINDOW_SEC = 3600 * 2  # Szerokość okna podglądu (2 godziny)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))

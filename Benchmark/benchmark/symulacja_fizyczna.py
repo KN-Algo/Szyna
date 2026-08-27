@@ -83,14 +83,22 @@ def wybierz_najzimniejsze_okno(sciezka_csv, dni):
     return poczatek, koniec
 
 
-def wczytaj_pogode_1s(sciezka_csv, max_dni=None, zakres_dat=None):
+def wczytaj_pogode_1s(sciezka_csv, max_dni=None, zakres_dat=None, dt=1.0):
     """
     Wczytuje DOWOLNY plik CSV z danymi pogodowymi (kolumny: data_czas/Timestamp,
     temperatura_powietrza_C, punkt_rosy_C, opad_mm, wiatr_m_s[, naslonecznienie_sekundy])
-    i sprowadza go do wspólnego kroku 1-sekundowego - niezależnie od tego, czy dane
-    wejściowe są natywnie 15-minutowe, godzinowe, czy jakiekolwiek inne. Rozdzielczość
-    źródła jest wykrywana automatycznie (mediana odstępów między znacznikami czasu),
-    więc ta sama funkcja obsługuje dowolne nowe dane pogodowe bez zmian.
+    i sprowadza go do wspólnego kroku `dt` sekund (domyślnie 1s, stąd nazwa
+    funkcji/zmiennych - historyczna, ale zachowana dla zgodności wstecznej z
+    resztą kodu) - niezależnie od tego, czy dane wejściowe są natywnie
+    15-minutowe, godzinowe, czy jakiekolwiek inne. Rozdzielczość źródła jest
+    wykrywana automatycznie (mediana odstępów między znacznikami czasu), więc
+    ta sama funkcja obsługuje dowolne nowe dane pogodowe bez zmian.
+
+    dt: krok docelowy siatki czasowej [s] - PRZEKAZYWANY DALEJ jako `dt` do
+    symulacja_fizyczna.uruchom_kontroler/przygotuj_modele_stanowe (muszą być
+    ZGODNE, inaczej indeksowanie opóźnienia transportowego i inne przeliczenia
+    zależne od dt się rozjadą). Domyślnie 1.0 = DOKŁADNIE zachowanie sprzed
+    dodania tego parametru.
 
     zakres_dat: opcjonalnie krotka (poczatek_ts, koniec_ts) ograniczająca dane do
     konkretnego okna czasowego (obcięcie PRZED interpolacją do 1s) - patrz
@@ -132,10 +140,10 @@ def wczytaj_pogode_1s(sciezka_csv, max_dni=None, zakres_dat=None):
 
     krok_zrodlowy_s = wykryj_krok_natywny_s(df_zrodlo)
     print(f"Wykryty natywny krok danych źródłowych: {krok_zrodlowy_s:.0f} s "
-          f"({krok_zrodlowy_s / 60:.1f} min) - interpolacja do 1 sekundy...")
+          f"({krok_zrodlowy_s / 60:.1f} min) - interpolacja do {dt:g} s...")
 
     df_zrodlo = df_zrodlo.set_index('Timestamp')
-    df_1s = df_zrodlo.resample('1s').asfreq()
+    df_1s = df_zrodlo.resample(f'{dt}s').asfreq()
     for col in ['temperatura_powietrza_C', 'punkt_rosy_C', 'wiatr_m_s']:
         df_1s[col] = df_1s[col].interpolate(method='linear')
 
@@ -152,13 +160,38 @@ def wczytaj_pogode_1s(sciezka_csv, max_dni=None, zakres_dat=None):
     return df_1s
 
 
-def przygotuj_modele_stanowe(dt=1.0):
-    """Zwraca (A_wd,B_wd,C_wd,D_wd, A_hd,B_hd,C_hd,D_hd, punkty_opoznienia)."""
+def przygotuj_modele_stanowe(dt=1.0, k_h_pct=0.0, t1_h_pct=0.0, t2_h_pct=0.0, l_h_pct=0.0):
+    """
+    Zwraca (A_wd,B_wd,C_wd,D_wd, A_hd,B_hd,C_hd,D_hd, punkty_opoznienia).
+
+    k_h_pct/t1_h_pct/t2_h_pct/l_h_pct: procentowe ZABURZENIE nominalnych
+    parametrów transmitancji GRZANIA (SOPDT: K_H, T1_H, T2_H, L_H) - np.
+    k_h_pct=10.0 oznacza K_H_efektywne = K_H * 1.10. Domyślnie 0.0 (brak
+    zaburzenia = DOKŁADNIE zachowanie sprzed dodania tych parametrów) - używane
+    do analizy wrażliwości na niepewność modelu obiektu (patrz
+    test_wrazliwosc_transmitancji.py): symulujemy PRAWDZIWY obiekt z
+    zaburzonymi parametrami, a każdy algorytm (w tym autotest - który i tak
+    identyfikuje obiekt z pomiarów, nie z tych stałych) reaguje na niego
+    dokładnie tak, jak reagowałby na realny sprzęt o innych parametrach niż
+    zakładane offline (funkcja_pid_normy.py, algorytmy nieadaptacyjne).
+    """
     sys_w = signal.tf2ss(TF_WEATHER.num, TF_WEATHER.den)
     A_wd, B_wd, C_wd, D_wd, _ = signal.cont2discrete(sys_w, dt, method='zoh')
-    sys_h = signal.tf2ss(TF_HEATING.num, TF_HEATING.den)
+
+    k_h_eff = K_H * (1.0 + k_h_pct / 100.0)
+    t1_h_eff = T1_H * (1.0 + t1_h_pct / 100.0)
+    t2_h_eff = T2_H * (1.0 + t2_h_pct / 100.0)
+    l_h_eff = L_H * (1.0 + l_h_pct / 100.0)
+    tf_heating_eff = signal.TransferFunction(
+        [k_h_eff * 0.0, k_h_eff], np.polymul([t1_h_eff, 1], [t2_h_eff, 1]).tolist())
+    sys_h = signal.tf2ss(tf_heating_eff.num, tf_heating_eff.den)
     A_hd, B_hd, C_hd, D_hd, _ = signal.cont2discrete(sys_h, dt, method='zoh')
-    punkty_opoznienia = int(round(L_H))
+    # Opóźnienie transportowe w PRÓBKACH siatki (nie sekundach!) - przy dt=1.0
+    # (dotychczasowe, jedyne używane dt) to było tożsame z l_h_eff, więc brak
+    # dzielenia przez dt nie ujawniał się jako błąd - dopiero przy dt != 1.0
+    # (patrz analiza wrażliwości/krok sterowania co 10s) dawałoby to
+    # opóźnienie dt razy za duże.
+    punkty_opoznienia = int(round(l_h_eff / dt))
     return A_wd, B_wd, C_wd, D_wd, A_hd, B_hd, C_hd, D_hd, punkty_opoznienia
 
 
@@ -177,10 +210,19 @@ def _get_power(controller, row, method_name):
 
 def uruchom_kontroler(name, controller, method_name, df_1s, hrt_weather_all,
                        A_hd, B_hd, C_hd, D_hd, punkty_opoznienia, dt=1.0,
-                       snow_reference_mm=None, power_reference_pct=None, print_progress=True):
+                       snow_reference_mm=None, power_reference_pct=None, print_progress=True,
+                       fault_injector=None):
     """
     Uruchamia pełną symulację (transmitancja grzania + SnowClimPhysicalModel)
     sterowaną przez podany kontroler, krok po kroku (1 s).
+
+    fault_injector: opcjonalny callable(row: dict, index: int) -> dict, wołany
+    TUŻ PRZED przekazaniem odczytu do kontrolera (patrz test_awarie_czujnikow.py) -
+    pozwala symulować AWARIĘ CZUJNIKA (bias, szum, rozłączenie) w tym, co widzi
+    kontroler, bez wpływu na PRAWDZIWĄ fizykę (current_hrt/current_crt/model
+    śniegu nadal liczone z NIEZAFAŁSZOWANYCH wartości - dokładnie tak, jak
+    prawdziwa awaria czujnika: rzeczywistość dalej się dzieje poprawnie, tylko
+    sterownik o niej nie wie). Domyślnie None = zero zmian w zachowaniu.
 
     snow_reference_mm / power_reference_pct: opcjonalne tablice (jeden element
     na krok symulacji) z grubością śniegu [mm] i mocą grzania [%] wyznaczonymi
@@ -208,6 +250,15 @@ def uruchom_kontroler(name, controller, method_name, df_1s, hrt_weather_all,
     if print_progress:
         print(f"--- Symulacja wariantu: {name} ---")
     ice_model = SnowClimPhysicalModel(latitude_deg=SUWALKI_LATITUDE_DEG)
+
+    # Informujemy kontroler o RZECZYWISTYM kroku, w jakim będzie odpytywany -
+    # patrz rdzen_kontrolera.KontrolerBazowy._dt_sterowania (potrzebne do
+    # poprawnego przeskalowania cyfrowego bliźniaka przy kroku != 1s).
+    # setattr (nie controller.dt=...) celowo - działa dla KAŻDEGO kontrolera,
+    # nawet tych bez tego atrybutu w ogóle (np. algorytm_z_normy.py, standalone,
+    # nie dziedziczy KontrolerBazowy) - po prostu dokłada atrybut, którego
+    # taki kontroler i tak nigdy nie odczyta.
+    controller._dt_sterowania = dt
 
     at_array = df_1s['temperatura_powietrza_C'].to_numpy()
     dew_array = df_1s['punkt_rosy_C'].to_numpy()
@@ -295,7 +346,8 @@ def uruchom_kontroler(name, controller, method_name, df_1s, hrt_weather_all,
             'WIATR_M_S': float(wind_array[index]),
         }
 
-        power_percent = _get_power(controller, row, method_name)
+        row_dla_kontrolera = fault_injector(row, index) if fault_injector is not None else row
+        power_percent = _get_power(controller, row_dla_kontrolera, method_name)
 
         if snow_reference_mm is not None and (snow_depth_mm_pre > 0.01 or ochrona_aktywna[index]):
             moc_normy = power_reference_pct[index]
@@ -377,6 +429,11 @@ def uruchom_kontroler(name, controller, method_name, df_1s, hrt_weather_all,
         'min_hrt': df_hist['HRT'].min(),
         'max_hrt': df_hist['HRT'].max(),
         'zabezpieczen_normy_uzytych': zabezpieczen_uzytych,
+        # Rzeczywiście zmierzona liczba FLOPs wykonanych PRZEZ TEN kontroler w
+        # TYM przebiegu (patrz rdzen_kontrolera.KontrolerBazowy._dodaj_flopy) -
+        # None dla kontrolerów bez tego licznika (nie powinno się zdarzyć,
+        # wszystkie 23 algorytmy go mają, ale getattr na wszelki wypadek).
+        'flops_rzeczywiste': getattr(controller, '_flops_licznik', None),
     }
     if print_progress and snow_reference_mm is not None:
         print(f"  Bezpiecznik parytetu ze śniegiem z normy zadziałał {zabezpieczen_uzytych} razy.")

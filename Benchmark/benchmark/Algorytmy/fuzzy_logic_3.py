@@ -15,6 +15,7 @@ class KontrolerFuzzy3:
         self.T_ZADANA = t_zadana
         self.max_switches_per_day = max_switches_per_day
         self.pwm = WykonawcaPWM(okres_cyklu=60)
+        self._flops_licznik = 0  # Licznik RZECZYWISTYCH FLOPs - patrz rdzen_kontrolera.KontrolerBazowy._dodaj_flopy.
 
     def compute_control(self, row_data):
         hrt = float(row_data['HRT_temp_grzana'])
@@ -28,5 +29,7 @@ class KontrolerFuzzy3:
             blad_T = self.T_ZADANA - hrt
             wynik = wnioskowanie_fl_podstawowe(blad_T, hrt, jest_snieg, jest_deszcz)
             self.pwm.ustaw_moc_cyklu(wynik)
+            self._flops_licznik += 40  # Silnik FL1 liczony RAZ na początku cyklu PWM (60s), nie co krok.
 
+        self._flops_licznik += 2  # Krok PWM (porównanie licznika cyklu).
         return self.pwm.krok()

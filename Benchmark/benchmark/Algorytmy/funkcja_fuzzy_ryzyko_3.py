@@ -37,8 +37,10 @@ class KontrolerFuzzyRyzyko3(KontrolerRyzykaBazowy):
                 blad_T = target_temperature - hrt_temp
                 wynik = wnioskowanie_fl_podstawowe(blad_T, hrt_temp, jest_snieg, jest_deszcz)
                 self.pwm.ustaw_moc_cyklu(wynik)
+                self._dodaj_flopy(40)  # Silnik FL1, liczony RAZ na początku cyklu PWM (60s).
 
         power_percent = self.pwm.krok()
+        self._dodaj_flopy(2)  # Krok PWM.
         self._krok_modelu(power_percent)
 
         diagnostics = {

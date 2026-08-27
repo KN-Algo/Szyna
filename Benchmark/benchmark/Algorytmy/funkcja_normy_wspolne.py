@@ -77,4 +77,5 @@ class KontrolerNormyCiaglaBazowy(KontrolerBazowy):
             target_temperature = hrt_temp
             reason = 'norma: brak zagrożenia'
 
+        self._dodaj_flopy(10)  # Porównania progów opadu/suchego mrozu.
         return target_temperature, need_heat, reason

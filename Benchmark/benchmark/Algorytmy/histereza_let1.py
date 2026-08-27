@@ -139,6 +139,7 @@ class KontrolerHisterezaLET1(KontrolerBazowy):
                 pass
 
         self._append_sensor_history(self.row_data)  # Zapisujemy aktualny odczyt do historii
+        self._dodaj_flopy(45)  # calculate_risk_level (10 progów) + histereza + limit przełączeń.
 
         # 5. BINARNE WYJŚCIE STERUJĄCE: Zwraca wyłącznie 0.0% (wyłączony) lub 100.0% (pełna moc)
         return 100.0 if self.heating_on else 0.0

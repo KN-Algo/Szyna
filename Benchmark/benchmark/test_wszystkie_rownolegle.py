@@ -44,7 +44,25 @@ FOLDER_WYNIKOW = os.environ.get(
     'SZYNA_FOLDER_WYNIKOW', os.path.join(BASE_DIR, "wyniki", "przeglad_wielu_lokalizacji"))
 os.makedirs(FOLDER_WYNIKOW, exist_ok=True)
 
-MAX_SWITCHES_PER_DAY = 12
+# Budżet przełączeń DZIENNY, egzekwowany NA ŻYWO w trakcie symulacji przez
+# każdy algorytm o wyjściu binarnym/dyskretnym (histereza, FL2/FL2v2/FL3) -
+# wywodzi się z założonego budżetu ŻYCIOWEGO przekaźnika/styku (patrz
+# BUDZET_PRZELACZEN_CALKOWITY niżej, używany tylko do raportowania w Excelu,
+# nie do egzekwowania limitu na bieżąco). Dawniej 12/dzień - podniesione na
+# wyraźne życzenie użytkownika.
+MAX_SWITCHES_PER_DAY = int(os.environ.get('SZYNA_MAX_PRZELACZEN_DZIEN', '100'))
+
+# Całkowity, ŻYCIOWY budżet przełączeń przekaźnika/styku (np. wg specyfikacji
+# producenta) - używany WYŁĄCZNIE do raportowania w Excelu (zakładka
+# "Zlozonosc_obliczeniowa"/kolumna budżetu) - pokazuje, jaki % tego budżetu
+# zużywałby dany algorytm rocznie przy tempie przełączeń zaobserwowanym w tym
+# przebiegu. NIE wpływa na symulację (to tylko analiza/interpretacja wyniku
+# 'przelaczenia' już policzonego). Dotyczy WYŁĄCZNIE algorytmów o wyjściu
+# binarnym/dyskretnym (typ w rejestrze inny niż PID/FL1) - dla algorytmów
+# ciągłych liczba przełączeń nic nie mówi o zużyciu mechanicznym styku, więc
+# ta metryka jest dla nich pomijana (patrz generuj_excel_podsumowanie.py).
+BUDZET_PRZELACZEN_CALKOWITY = int(os.environ.get('SZYNA_BUDZET_PRZELACZEN', '500000'))
+
 NAZWA_ALGORYTMU_NORMY = 'algorytm_z_normy'
 
 # None = cały zakres każdego pliku (patrz uzasadnienie w wersji sekwencyjnej -
@@ -78,6 +96,39 @@ _lokalizacje_env = os.environ.get('SZYNA_LOKALIZACJE')
 LOKALIZACJE_FILTR = (
     {l.strip() for l in _lokalizacje_env.split(',') if l.strip()} if _lokalizacje_env else None
 )
+
+# Analiza wrażliwości na niepewność modelu obiektu (transmitancja GRZANIA,
+# SOPDT K/T1/T2/L - patrz symulacja_fizyczna.przygotuj_modele_stanowe) - procentowe
+# zaburzenie PRAWDZIWEGO obiektu symulowanego (nie założeń żadnego algorytmu).
+# Domyślnie 0.0 (brak zaburzenia = zachowanie identyczne jak przed dodaniem tej
+# funkcji). SZYNA_SCENARIUSZ to czysto opisowa etykieta (do kolumny 'scenariusz'
+# w wynikach) - nie wpływa na obliczenia, ułatwia tylko późniejsze filtrowanie/
+# porównanie wielu przebiegów w jednym pliku, gdyby ktoś je scalił.
+PERTURBACJA_K_PCT = float(os.environ.get('SZYNA_PERTURB_K', '0.0'))
+PERTURBACJA_T1_PCT = float(os.environ.get('SZYNA_PERTURB_T1', '0.0'))
+PERTURBACJA_T2_PCT = float(os.environ.get('SZYNA_PERTURB_T2', '0.0'))
+PERTURBACJA_L_PCT = float(os.environ.get('SZYNA_PERTURB_L', '0.0'))
+SCENARIUSZ_ETYKIETA = os.environ.get('SZYNA_SCENARIUSZ', 'nominal')
+
+# Krok symulacji/sterowania [s] - domyślnie 10s (NIE 1s): decyzja sterowania i
+# fizyka liczone są co tyle sekund zamiast co sekundę. Zweryfikowane, że przy
+# tej samej fizyce (K_H/T1_H/T2_H/L_H) i tym samym autoteście wynik energetyczny
+# zmienia się o ułamek procenta (~0.02% w testach), za to symulacja jest ~13x
+# szybsza - bezpośrednio adresuje ciasny budżet CPU-godzin na klastrze. Ustaw
+# SZYNA_KROK_S=1, żeby wrócić do dawnej rozdzielczości 1-sekundowej (np. do
+# odtworzenia/porównania z wynikami sprzed tej zmiany).
+KROK_SYMULACJI_S = float(os.environ.get('SZYNA_KROK_S', '10.0'))
+
+# Wznawianie przerwanego przebiegu (np. po wyczerpaniu limitu czasu/pamięci na
+# klastrze albo awarii węzła) - domyślnie WŁĄCZONE: jeśli w FOLDER_WYNIKOW
+# istnieje już PRZEGLAD_ZBIORCZY.csv z POPRZEDNIEGO (niedokończonego) przebiegu
+# w TYM SAMYM folderze/scenariuszu, wczytujemy go i pomijamy zadania
+# (lokalizacja, algorytm), które już w nim są - liczą się TYLKO brakujące.
+# Nic z poprzedniego przebiegu nie ginie (stare wyniki trafiają do finalnego
+# CSV razem z nowymi). Ustaw SZYNA_WZNOW=0, żeby wymusić przeliczenie WSZYSTKIEGO
+# od zera nawet jeśli częściowe wyniki już istnieją (np. po zmianie kodu
+# algorytmów, gdy stare wyniki są już nieaktualne).
+WZNAWIAJ_PRZERWANE = os.environ.get('SZYNA_WZNOW', '1') != '0'
 
 
 def wykryj_liczbe_watkow():
@@ -177,9 +228,12 @@ def przetworz_kombinacje(nazwa_lokalizacji, sciezka_csv, nazwa_algorytmu):
         if MAX_DNI_NA_LOKALIZACJE is not None:
             zakres_dat = fiz.wybierz_najzimniejsze_okno(sciezka_csv, MAX_DNI_NA_LOKALIZACJE)
 
-        df_1s = fiz.wczytaj_pogode_1s(sciezka_csv, zakres_dat=zakres_dat)
-        dt = 1.0
-        A_wd, B_wd, C_wd, D_wd, A_hd, B_hd, C_hd, D_hd, punkty_opoznienia = fiz.przygotuj_modele_stanowe(dt)
+        dt = KROK_SYMULACJI_S
+        df_1s = fiz.wczytaj_pogode_1s(sciezka_csv, zakres_dat=zakres_dat, dt=dt)
+        A_wd, B_wd, C_wd, D_wd, A_hd, B_hd, C_hd, D_hd, punkty_opoznienia = fiz.przygotuj_modele_stanowe(
+            dt, k_h_pct=PERTURBACJA_K_PCT, t1_h_pct=PERTURBACJA_T1_PCT,
+            t2_h_pct=PERTURBACJA_T2_PCT, l_h_pct=PERTURBACJA_L_PCT,
+        )
         at_array = df_1s['temperatura_powietrza_C'].to_numpy()
         hrt_weather_all = fiz.wylicz_skladowa_pogodowa(at_array, A_wd, B_wd, C_wd, D_wd, dt)
 
@@ -202,10 +256,36 @@ def przetworz_kombinacje(nazwa_lokalizacji, sciezka_csv, nazwa_algorytmu):
                 print_progress=False,
             )
 
+            # Rodzina "uczenia z kar" (funkcja_nauka_kary_wspolna.py) loguje
+            # KAŻDĄ aktualizację _czynnik_nauczony (raz/dobę) do
+            # kontroler.historia_uczenia - zapisujemy to OSOBNO (nie do
+            # głównego CSV, bo ma inną granulację czasową - raz/dobę, nie
+            # raz/krok) do zakładki "Uczenie_adaptacyjne" w Excelu.
+            historia_uczenia = getattr(kontroler, 'historia_uczenia', None)
+            if historia_uczenia:
+                df_uczenie = pd.DataFrame(historia_uczenia)
+                df_uczenie.insert(0, 'algorytm', nazwa_algorytmu)
+                df_uczenie.insert(0, 'lokalizacja', nazwa_lokalizacji)
+                df_uczenie.to_csv(
+                    os.path.join(FOLDER_WYNIKOW, f"{nazwa_lokalizacji}_{nazwa_algorytmu}_uczenie.csv"),
+                    index=False,
+                )
+
         stats = dict(stats)
         stats['lokalizacja'] = nazwa_lokalizacji
+        stats['scenariusz'] = SCENARIUSZ_ETYKIETA
+        stats['perturb_k_pct'] = PERTURBACJA_K_PCT
+        stats['perturb_t1_pct'] = PERTURBACJA_T1_PCT
+        stats['perturb_t2_pct'] = PERTURBACJA_T2_PCT
+        stats['perturb_l_pct'] = PERTURBACJA_L_PCT
         df_zapis = fiz.przygotuj_do_zapisu(df_wynik, ZAPISZ_CO_N_SEKUND)
-        df_zapis.to_csv(os.path.join(FOLDER_WYNIKOW, f"{nazwa_lokalizacji}_{nazwa_algorytmu}.csv"), index=False)
+        # Etykieta scenariusza w nazwie pliku - żeby różne scenariusze (analiza
+        # wrażliwości) mogły bezpiecznie współdzielić ten sam FOLDER_WYNIKOW bez
+        # nadpisywania się nawzajem (domyślnie 'nominal', czyli identyczna nazwa
+        # jak przed dodaniem analizy wrażliwości - zero zmian w zwykłym użyciu).
+        przedrostek = f"{nazwa_lokalizacji}_{nazwa_algorytmu}" if SCENARIUSZ_ETYKIETA == 'nominal' \
+            else f"{nazwa_lokalizacji}_{nazwa_algorytmu}_{SCENARIUSZ_ETYKIETA}"
+        df_zapis.to_csv(os.path.join(FOLDER_WYNIKOW, f"{przedrostek}.csv"), index=False)
 
         return nazwa_lokalizacji, nazwa_algorytmu, stats, None
     except Exception:
@@ -226,6 +306,10 @@ def main():
     if ALGORYTMY_FILTR is not None:
         nazwy_algorytmow = [a for a in nazwy_algorytmow if a in ALGORYTMY_FILTR]
 
+    if (PERTURBACJA_K_PCT, PERTURBACJA_T1_PCT, PERTURBACJA_T2_PCT, PERTURBACJA_L_PCT) != (0.0, 0.0, 0.0, 0.0):
+        print(f"UWAGA: aktywna PERTURBACJA transmitancji grzania (scenariusz '{SCENARIUSZ_ETYKIETA}') - "
+              f"K{PERTURBACJA_K_PCT:+.1f}% T1{PERTURBACJA_T1_PCT:+.1f}% T2{PERTURBACJA_T2_PCT:+.1f}% "
+              f"L{PERTURBACJA_L_PCT:+.1f}% - analiza wrażliwości, NIE nominalny przebieg.")
     if MAX_DNI_NA_LOKALIZACJE is not None:
         print(f"UWAGA: SZYNA_MAX_DNI={MAX_DNI_NA_LOKALIZACJE} - ograniczony zakres dat (tryb testowy).")
     if LOKALIZACJE_FILTR is not None or ALGORYTMY_FILTR is not None:
@@ -240,7 +324,35 @@ def main():
     print(f"Łącznie {len(zadania)} zadań ({len(pliki_pogodowe)} lokalizacji x {len(ALGORYTMY)} algorytmów) "
           f"na {liczba_watkow} procesach.\n")
 
+    # --- WZNOWIENIE: jeśli PRZEGLAD_ZBIORCZY.csv z poprzedniego (niedokończonego)
+    # przebiegu już istnieje w tym folderze, wczytujemy jego wiersze jako już
+    # gotowe i pomijamy odpowiadające im zadania - liczą się TYLKO braki. ---
     wyniki = []
+    liczba_zadan_ogolem = len(zadania)
+    sciezka_zbiorczy = os.path.join(FOLDER_WYNIKOW, "PRZEGLAD_ZBIORCZY.csv")
+    if WZNAWIAJ_PRZERWANE and os.path.exists(sciezka_zbiorczy):
+        try:
+            df_poprzedni = pd.read_csv(sciezka_zbiorczy)
+            wyniki = df_poprzedni.to_dict('records')
+            gotowe_pary = {(w['lokalizacja'], w['name']) for w in wyniki if 'lokalizacja' in w and 'name' in w}
+            liczba_przed = len(zadania)
+            zadania = [z for z in zadania if (z[0], z[2]) not in gotowe_pary]
+            print(f"WZNOWIENIE: znaleziono {len(gotowe_pary)} gotowych zadań z poprzedniego przebiegu "
+                  f"({sciezka_zbiorczy}) - liczą się tylko brakujące {len(zadania)}/{liczba_przed}.\n")
+        except Exception:
+            print(f"UWAGA: nie udało się wczytać {sciezka_zbiorczy} do wznowienia - liczę wszystko od zera.\n")
+            wyniki = []
+
+    if not zadania:
+        print("Wszystkie zadania już wykonane w poprzednim przebiegu (SZYNA_WZNOW=1) - nic do policzenia, "
+              "tylko odświeżam Excel z istniejącego PRZEGLAD_ZBIORCZY.csv.")
+        try:
+            import generuj_excel_podsumowanie
+            generuj_excel_podsumowanie.main()
+        except Exception:
+            traceback.print_exc()
+        return
+
     bledy = []
     t0 = time.time()
 
@@ -269,7 +381,9 @@ def main():
                 pd.DataFrame(wyniki).to_csv(os.path.join(FOLDER_WYNIKOW, "PRZEGLAD_ZBIORCZY.csv"), index=False)
 
     calkowity_czas_min = (time.time() - t0) / 60.0
-    print(f"\nZakończono w {calkowity_czas_min:.1f} min. Sukcesy: {len(wyniki)}/{len(zadania)}. Błędy: {len(bledy)}.")
+    print(f"\nZakończono w {calkowity_czas_min:.1f} min. Sukcesy: {len(wyniki)}/{liczba_zadan_ogolem} "
+          f"(w tym {len(wyniki) - (zakonczone - len(bledy))} wznowionych z poprzedniego przebiegu). "
+          f"Błędy w TYM przebiegu: {len(bledy)}.")
     if bledy:
         print("Lokalizacje/algorytmy zakończone błędem:")
         for lok, alg, _ in bledy:
@@ -280,8 +394,9 @@ def main():
         return
 
     df_wszystkie = pd.DataFrame(wyniki)
-    kolumny = ['lokalizacja', 'name', 'energia_kwh', 'przelaczenia', 'max_snieg_mm', 'max_lod_mm', 'max_hrt', 'min_hrt',
-               'srednia_moc_pct', 'godziny_ze_sniegiem', 'zabezpieczen_normy_uzytych', 'dni']
+    kolumny = ['lokalizacja', 'name', 'scenariusz', 'perturb_k_pct', 'perturb_t1_pct', 'perturb_t2_pct',
+               'perturb_l_pct', 'energia_kwh', 'przelaczenia', 'max_snieg_mm', 'max_lod_mm', 'max_hrt', 'min_hrt',
+               'srednia_moc_pct', 'godziny_ze_sniegiem', 'zabezpieczen_normy_uzytych', 'dni', 'flops_rzeczywiste']
     kolumny = [k for k in kolumny if k in df_wszystkie.columns]
     df_wszystkie = df_wszystkie[kolumny]
     df_wszystkie.to_csv(os.path.join(FOLDER_WYNIKOW, "PRZEGLAD_ZBIORCZY.csv"), index=False)

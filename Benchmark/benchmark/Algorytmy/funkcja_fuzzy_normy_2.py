@@ -28,6 +28,7 @@ class KontrolerFuzzyNormy2(KontrolerNormyCiaglaBazowy):
             blad_T = target_temperature - hrt_temp
             wynik = wnioskowanie_fl_podstawowe(blad_T, hrt_temp, jest_snieg, jest_deszcz)
             power_percent = binaryzuj(wynik)
+            self._dodaj_flopy(40)  # Silnik FL1/FL2.
 
         diagnostics = {
             'target_temperature': target_temperature,

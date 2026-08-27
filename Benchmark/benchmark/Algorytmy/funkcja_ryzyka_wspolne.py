@@ -51,40 +51,9 @@ class KontrolerRyzykaBazowy(KontrolerBazowy):
         self.hrt_on_precip = 4.0    # HRT załączenie przy opadach: +4°C (Tabela nr 5)
         self.at_low_freeze = -5.0   # Suchy mróz dolna granica: -5°C (Tabela nr 6)
         self.hrt_on_dry = 1.0       # HRT załączenie bez opadów: +1°C (Tabela nr 6)
-        self._ostatnia_moc_autotestu = 100.0
-
-    def _autotest_startowy(self, row_data):
-        """
-        Jednorazowy autotest PRZY STARCIE (patrz KontrolerBazowy.autotest) -
-        dopóki self.autotest_result is None, wymusza pełne grzanie i zbiera
-        próbki do identyfikacji obiektu. Po zakończeniu (sukces LUB porażka,
-        sprawdzane raz) buduje "cyfrowy bliźniak" grzałki
-        (self._zbuduj_model_z_autotestu) do użytku przez _evaluate_risk_setpoint -
-        jeśli identyfikacja się nie powiedzie (fit_ok=False), model NIE powstaje
-        i _evaluate_risk_setpoint wraca do czystej prognozy Kalmana (dokładnie
-        jak przed tą funkcją).
-
-        Zwraca True, dopóki autotest trwa (wywołujący ma wtedy zwrócić moc z
-        tej metody i pominąć normalną logikę decyzyjną), False gdy jest już
-        zakończony (w tym LUB w którymś z poprzednich wywołań) - wtedy
-        wywołujący ma wykonać normalną logikę.
-        """
-        if self.autotest_result is not None:
-            return False
-
-        self._ostatnia_moc_autotestu, wynik = self.autotest(row_data)
-        if wynik is not None and wynik['fit_ok']:
-            self._zbuduj_model_z_autotestu(wynik['K'], wynik['T1'], wynik['T2'], wynik['L'])
-            # Autotest grzeje CAŁY czas trwania testu pełną mocą (100%) od stanu
-            # zerowego (skok 0%->100%) - "przewijamy" świeżo zbudowanego
-            # cyfrowego bliźniaka przez DOKŁADNIE ten sam profil mocy, żeby jego
-            # stan (i linia opóźnienia) odpowiadał temu, co naprawdę dzieje się
-            # z obiektem W TEJ CHWILI, zamiast zaczynać "na zimno" (co
-            # fałszywie sugerowałoby zerowe ciepło resztkowe zaraz po
-            # zakończeniu kilkugodzinnego grzania pełną mocą).
-            for _ in range(int(round(wynik['duration_s']))):
-                self._krok_modelu(100.0)
-        return wynik is None
+        # _ostatnia_moc_autotestu i _autotest_startowy przeniesione do
+        # rdzen_kontrolera.KontrolerBazowy (żeby były dostępne dla każdego
+        # kontrolera, nie tylko rodziny funkcji ryzyka) - dziedziczone stąd bez zmian.
 
     def _evaluate_risk_setpoint(self, row_data, dodatkowa_ucieczka_sniegu=None):
         """
@@ -174,8 +143,15 @@ class KontrolerRyzykaBazowy(KontrolerBazowy):
                     and (timestamp - cached_time).total_seconds() < TEMP_FORECAST_REFRESH_S):
                 zanikanie_na_siatce = cached
             else:
-                zanikanie = self._prognoza_zanikania_ciepla(HORIZON_STEPS * STEP_SECONDS)
-                zanikanie_na_siatce = zanikanie[STEP_SECONDS - 1::STEP_SECONDS][:len(forecast_crt)]
+                # _prognoza_zanikania_ciepla liczy w KROKACH MODELU (każdy krok =
+                # self._dt_sterowania sekund, nie zawsze 1s - patrz _autotest_startowy),
+                # więc żeby pokryć HORIZON_STEPS*STEP_SECONDS sekund realnego czasu,
+                # trzeba przeliczyć liczbę kroków i szerokość siatki (co ile kroków
+                # modelu przypada jeden punkt siatki 15-minutowej) przez dt_sterowania.
+                krok_siatki_w_probkach = max(int(round(STEP_SECONDS / self._dt_sterowania)), 1)
+                liczba_krokow_prognozy = int(round(HORIZON_STEPS * STEP_SECONDS / self._dt_sterowania))
+                zanikanie = self._prognoza_zanikania_ciepla(liczba_krokow_prognozy)
+                zanikanie_na_siatce = zanikanie[krok_siatki_w_probkach - 1::krok_siatki_w_probkach][:len(forecast_crt)]
                 self._model_forecast_cache = zanikanie_na_siatce
                 self._model_forecast_cache_time = timestamp
             forecast_hrt = [c + h for c, h in zip(forecast_crt, zanikanie_na_siatce)]
@@ -225,6 +201,7 @@ class KontrolerRyzykaBazowy(KontrolerBazowy):
             target_temperature = hrt_temp
             reason = 'brak zagrożenia'
 
+        self._dodaj_flopy(20)  # Priorytety 1-4 (porównania progów, kara za śnieg).
         return target_temperature, need_heat, reason, forecast_min_c, warmup_soon
 
 
@@ -289,6 +266,7 @@ class KontrolerRyzykaOpadBazowy(KontrolerRyzykaBazowy):
 
         precip_total_mm = float(row_data['PRECIP_opad']) + float(row_data['SNOW_snieg'])
         prognoza = self._prognoza_intensywnosci_opadu(row_data, precip_total_mm)
+        self._dodaj_flopy(160)  # przewidywanie_opadow: ~20 FLOPs/krok x 8 kroków horyzontu.
         front_ustepuje = not any(int(v) > 0 for v in prognoza[:RISK_OPAD_HORYZONT_KROKOW])
         if not front_ustepuje:
             return False, None

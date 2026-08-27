@@ -9,6 +9,10 @@
 #                                  (autotest) / opis - wprost z Algorytmy/rejestr_algorytmow.py
 #   - "Zlozonosc_obliczeniowa"  - szacunkowa złożoność czasowa/pamięciowa i FLOPs/krok każdego
 #                                  algorytmu (analiza kodu, nie profiler) - wprost z rejestru
+#   - "Uczenie_adaptacyjne"     - krzywa uczenia (czynnik_nauczony w czasie) rodziny
+#                                  nauka_kary_* - wczytywana z osobnych plików
+#                                  <lokalizacja>_<algorytm>_uczenie.csv (patrz
+#                                  test_wszystkie_rownolegle.py), nie z PRZEGLAD_ZBIORCZY.csv
 #   - "Wnioski"                 - tekstowe podsumowanie z konkretnymi liczbami
 #
 # Wartości w zakładkach "Podsumowanie_*" są formułami Excela odwołującymi się
@@ -23,6 +27,8 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.formatting.rule import FormulaRule, ColorScaleRule
 from openpyxl.utils import get_column_letter
+from openpyxl.chart import LineChart, Reference
+import glob
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(BASE_DIR, 'Algorytmy'))
@@ -35,6 +41,11 @@ FOLDER_WYNIKOW = os.environ.get(
     'SZYNA_FOLDER_WYNIKOW', os.path.join(BASE_DIR, "wyniki", "przeglad_wielu_lokalizacji"))
 SCIEZKA_CSV = os.path.join(FOLDER_WYNIKOW, "PRZEGLAD_ZBIORCZY.csv")
 SCIEZKA_XLSX = os.path.join(FOLDER_WYNIKOW, "Podsumowanie_wynikow.xlsx")
+
+# Życiowy budżet przełączeń przekaźnika/styku - patrz uzasadnienie przy
+# MAX_SWITCHES_PER_DAY w test_wszystkie_rownolegle.py (ta sama zmienna
+# środowiskowa, żeby oba skrypty zawsze zgadzały się co do tej liczby).
+BUDZET_PRZELACZEN_CALKOWITY = int(os.environ.get('SZYNA_BUDZET_PRZELACZEN', '500000'))
 
 NAZWY_MIAST = {
     'abisko': 'Abisko', 'fairbanks': 'Fairbanks', 'jakuck': 'Jakuck',
@@ -69,8 +80,20 @@ NAZWY_ALGORYTMOW = {
     'fuzzy_ryzyko_2_opad': 'Fuzzy + ryzyko + opad (FL2, binarny)',
     'fuzzy_ryzyko_2v2_opad': 'Fuzzy + ryzyko + opad (FL2v2, binarny)',
     'fuzzy_ryzyko_3_opad': 'Fuzzy + ryzyko + opad (FL3, PWM)',
+    'nauka_kary': 'Uczenie z kar (bazowy)',
+    'nauka_kary_temp': 'Uczenie z kar + prognoza temp.',
+    'nauka_kary_opad': 'Uczenie z kar + prognoza opadu',
+    'nauka_kary_blizniak': 'Uczenie z kar + cyfrowy bliźniak',
+    'nauka_kary_ryzyko': 'Uczenie z kar + pełne ryzyko',
 }
 ALGORYTM_BAZOWY = 'Automat z normy (bazowy)'
+
+# Algorytmy z rodziny "uczenia z kar" - dostają WŁASNĄ zakładkę
+# "Uczenie_adaptacyjne" pokazującą jak _czynnik_nauczony (i kary) zmieniają się
+# W CZASIE trwania symulacji (krzywa uczenia) - patrz KLUCZE_UCZENIA_KARY niżej
+# i sekcja budująca tę zakładkę w main().
+KLUCZE_UCZENIA_KARY = ['nauka_kary', 'nauka_kary_temp', 'nauka_kary_opad',
+                        'nauka_kary_blizniak', 'nauka_kary_ryzyko']
 
 FONT_NAZWA = 'Arial'
 KOLOR_NAGLOWEK_BG = '1F4E78'
@@ -133,29 +156,34 @@ def main():
     ws_dane = wb.active
     ws_dane.title = 'Dane'
     naglowki_dane = ['Lokalizacja', 'Interwał', 'Rok', 'Algorytm', 'Energia (kWh)',
-                      'Przełączenia', 'Max śnieg (mm)', 'Max HRT (°C)']
+                      'Przełączenia', 'Max śnieg (mm)', 'Max HRT (°C)', 'FLOPs (zmierzone)']
     ustaw_naglowek(ws_dane, 1, naglowki_dane)
 
+    ma_flopy = 'flops_rzeczywiste' in df.columns
     for i, wiersz in enumerate(df.itertuples(index=False), start=2):
+        flopy = getattr(wiersz, 'flops_rzeczywiste', None) if ma_flopy else None
         wartosci = [wiersz.Lokalizacja, wiersz.Interwal, wiersz.Rok, wiersz.Algorytm,
                     round(wiersz.energia_kwh, 2), int(wiersz.przelaczenia),
-                    round(wiersz.max_snieg_mm, 2), round(wiersz.max_hrt, 2)]
+                    round(wiersz.max_snieg_mm, 2), round(wiersz.max_hrt, 2),
+                    int(flopy) if pd.notna(flopy) else None]
         for j, wartosc in enumerate(wartosci, start=1):
             komorka = ws_dane.cell(row=i, column=j, value=wartosc)
             komorka.font = FONT_ZWYKLY
             komorka.border = OBRAMOWANIE_CIENKIE
             if j == 3:
                 komorka.alignment = WYROWNANIE_SRODEK
+            if j == 9:
+                komorka.number_format = '0.00E+00'
 
     ostatni_wiersz_dane = len(df) + 1
     ws_dane.freeze_panes = 'A2'
-    ws_dane.auto_filter.ref = f'A1:H{ostatni_wiersz_dane}'
+    ws_dane.auto_filter.ref = f'A1:I{ostatni_wiersz_dane}'
 
     # Podświetlenie wierszy z podejrzanym przegrzaniem (Max HRT > 35°C).
     fill_anomalia = PatternFill('solid', fgColor=KOLOR_ANOMALIA)
     font_anomalia = Font(name=FONT_NAZWA, size=10, color=KOLOR_ANOMALIA_TEKST)
     ws_dane.conditional_formatting.add(
-        f'A2:H{ostatni_wiersz_dane}',
+        f'A2:I{ostatni_wiersz_dane}',
         FormulaRule(formula=['$H2>35'], fill=fill_anomalia, font=font_anomalia),
     )
 
@@ -167,11 +195,24 @@ def main():
     ws_alg = wb.create_sheet('Podsumowanie_algorytmy')
     naglowki_alg = ['Algorytm', 'Średnia energia (kWh)', 'Min energia (kWh)', 'Max energia (kWh)',
                      'Średnie przełączenia', 'Średni max śnieg (mm)', 'Średni max HRT (°C)',
-                     'Liczba przypadków przegrzania (HRT>35°C)']
+                     'Liczba przypadków przegrzania (HRT>35°C)',
+                     'Przełączenia/dzień (śr.)', 'Przewidywane przełączenia/rok',
+                     f'% budżetu życiowego ({BUDZET_PRZELACZEN_CALKOWITY:,}) zużyty/rok'.replace(',', ' ')]
     ustaw_naglowek(ws_alg, 1, naglowki_alg)
 
+    # Budżet przełączeń dotyczy WYŁĄCZNIE algorytmów o wyjściu binarnym/dyskretnym
+    # (histereza, FL2/FL2v2/FL3) - dla ciągłych (PID, FL1) liczba przełączeń nie
+    # mówi nic o zużyciu mechanicznym styku, więc kolumny 9-11 zostają puste
+    # (patrz uzasadnienie w test_wszystkie_rownolegle.py przy MAX_SWITCHES_PER_DAY).
+    def _czy_dyskretny(typ):
+        return not (typ.startswith('PID') or 'FL1' in typ)
+
+    dyskretnosc_per_alg = {k: _czy_dyskretny(ALGORYTMY.get(k, {}).get('typ', '')) for k in NAZWY_ALGORYTMOW}
+    sr_dni_per_alg = df.groupby('name')['dni'].mean() if 'dni' in df.columns else None
+    sr_przelaczen_per_alg = df.groupby('name')['przelaczenia'].mean() if 'przelaczenia' in df.columns else None
+
     lista_algorytmow = list(NAZWY_ALGORYTMOW.values())
-    for i, algorytm in enumerate(lista_algorytmow, start=2):
+    for i, (klucz, algorytm) in enumerate(NAZWY_ALGORYTMOW.items(), start=2):
         ws_alg.cell(row=i, column=1, value=algorytm).font = FONT_POGRUBIONY
         ws_alg.cell(row=i, column=2, value=(
             f'=AVERAGEIF(Dane!$D$2:$D${ostatni_wiersz_dane}, $A{i}, Dane!$E$2:$E${ostatni_wiersz_dane})'
@@ -194,10 +235,23 @@ def main():
         ws_alg.cell(row=i, column=8, value=(
             f'=COUNTIFS(Dane!$D$2:$D${ostatni_wiersz_dane}, $A{i}, Dane!$H$2:$H${ostatni_wiersz_dane}, ">35")'
         ))
-        for kol in range(2, 9):
+
+        if dyskretnosc_per_alg.get(klucz) and sr_przelaczen_per_alg is not None and sr_dni_per_alg is not None:
+            sr_dni = sr_dni_per_alg.get(klucz)
+            sr_przel = sr_przelaczen_per_alg.get(klucz)
+            if sr_dni is not None and pd.notna(sr_dni) and sr_dni > 0 and sr_przel is not None and pd.notna(sr_przel):
+                przel_dzien = sr_przel / sr_dni
+                przel_rok = przel_dzien * 365.0
+                proc_budzetu_rok = przel_rok / BUDZET_PRZELACZEN_CALKOWITY * 100.0
+                ws_alg.cell(row=i, column=9, value=przel_dzien)
+                ws_alg.cell(row=i, column=10, value=przel_rok)
+                ws_alg.cell(row=i, column=11, value=proc_budzetu_rok)
+
+        FORMATY_KOLUMN_ALG = {8: '0', 10: '0', 11: '0.00"%"'}
+        for kol in range(2, 12):
             komorka = ws_alg.cell(row=i, column=kol)
             komorka.font = FONT_ZWYKLY
-            komorka.number_format = '0.00' if kol not in (8,) else '0'
+            komorka.number_format = FORMATY_KOLUMN_ALG.get(kol, '0.00')
             komorka.border = OBRAMOWANIE_CIENKIE
 
     ostatni_wiersz_alg = len(lista_algorytmow) + 1
@@ -325,24 +379,45 @@ def main():
         'interpretera Pythona/pandas na krok, NIE z limitu przepustowości FLOPs procesora.'
     ))
     ws_zloz.cell(row=1, column=1).font = Font(name=FONT_NAZWA, italic=True, size=9, color='555555')
-    ws_zloz.merge_cells(start_row=1, start_column=1, end_row=1, end_column=7)
+    ws_zloz.merge_cells(start_row=1, start_column=1, end_row=1, end_column=9)
+    ws_zloz.cell(row=2, column=1, value=(
+        'Kolumny "zmierzone" pochodzą z rzeczywistego licznika operacji w kodzie (rdzen_kontrolera.'
+        'KontrolerBazowy._dodaj_flopy - patrz kolumna "FLOPs (zmierzone)" w zakładce Dane), uśrednione '
+        'po wszystkich przebiegach danego algorytmu w tym przeglądzie - to NIE jest to samo co "Łączne FLOPs" '
+        '(które ekstrapoluje stały szacunek/krok na medianę długości okna).'
+    ))
+    ws_zloz.cell(row=2, column=1).font = Font(name=FONT_NAZWA, italic=True, size=9, color='555555')
+    ws_zloz.merge_cells(start_row=2, start_column=1, end_row=2, end_column=9)
 
-    WIERSZ_NAGLOWKA_ZLOZ = 2
+    WIERSZ_NAGLOWKA_ZLOZ = 3
     naglowki_zloz = ['Algorytm', 'Złożoność czasowa (na krok)', 'FLOPs/krok (przybliżone)',
                       'Złożoność pamięciowa', 'Pamięć - stan ustalony (MB)',
-                      'Kroki w oknie testowym', 'Łączne FLOPs (algorytm, całe okno)']
+                      'Kroki w oknie testowym', 'Łączne FLOPs (szacunek x kroki)',
+                      'Śr. FLOPs/krok (zmierzone)', 'Śr. łączne FLOPs (zmierzone)']
     ustaw_naglowek(ws_zloz, WIERSZ_NAGLOWKA_ZLOZ, naglowki_zloz)
 
-    # "Kroki w oknie testowym" i "Łączne FLOPs" liczone z rzeczywistej mediany liczby
-    # dni w danych (kolumna 'dni' w Dane, jeśli obecna) x 86400 s/dobę - czysto
-    # informacyjne, NIE FLOPs całej symulacji (fizyka obiektu/śniegu pominięta, patrz wyżej).
+    # "Kroki w oknie testowym" i "Łączne FLOPs (szacunek x kroki)" liczone z rzeczywistej
+    # mediany liczby dni w danych (kolumna 'dni' w Dane, jeśli obecna) x 86400 s/dobę -
+    # to ekstrapolacja stałego szacunku/krok, NIE FLOPs całej symulacji (fizyka obiektu/
+    # śniegu pominięta, patrz wyżej). Kolumny "zmierzone" obok to NIEZALEŻNA, rzeczywista
+    # miara z liczników w kodzie - średnia po wszystkich przebiegach danego algorytmu.
     mediana_dni = df['dni'].median() if 'dni' in df.columns else None
     kroki_okna = int(round(mediana_dni * 86400)) if mediana_dni is not None else None
+
+    sr_flopy_zmierzone = (df.groupby('name')['flops_rzeczywiste'].mean()
+                          if 'flops_rzeczywiste' in df.columns else None)
+    sr_dni_per_alg = df.groupby('name')['dni'].mean() if 'dni' in df.columns else None
 
     for i, klucz in enumerate(NAZWY_ALGORYTMOW, start=WIERSZ_NAGLOWKA_ZLOZ + 1):
         wpis = ALGORYTMY.get(klucz, {})
         flops_krok = wpis.get('flops_na_krok')
         laczne_flops = flops_krok * kroki_okna if (flops_krok is not None and kroki_okna is not None) else None
+        flops_zmierzone = (sr_flopy_zmierzone.get(klucz) if sr_flopy_zmierzone is not None else None)
+        flops_zmierzone_na_krok = None
+        if flops_zmierzone is not None and pd.notna(flops_zmierzone) and sr_dni_per_alg is not None:
+            dni_alg = sr_dni_per_alg.get(klucz)
+            if dni_alg is not None and pd.notna(dni_alg) and dni_alg > 0:
+                flops_zmierzone_na_krok = flops_zmierzone / (dni_alg * 86400.0)
         wartosci = [
             NAZWY_ALGORYTMOW[klucz],
             wpis.get('zlozonosc_czasowa', ''),
@@ -351,24 +426,114 @@ def main():
             wpis.get('pamiec_przyblizona_mb'),
             kroki_okna,
             laczne_flops,
+            flops_zmierzone_na_krok,
+            flops_zmierzone if (flops_zmierzone is not None and pd.notna(flops_zmierzone)) else None,
         ]
         for j, wartosc in enumerate(wartosci, start=1):
             komorka = ws_zloz.cell(row=i, column=j, value=wartosc)
             komorka.font = FONT_POGRUBIONY if j == 1 else FONT_ZWYKLY
             komorka.border = OBRAMOWANIE_CIENKIE
             komorka.alignment = Alignment(vertical='center', wrap_text=(j in (2, 4)))
-            if j in (3, 5, 6):
-                komorka.number_format = '0.000' if j == 5 else '0'
-            if j == 7 and wartosc is not None:
+            if j in (3, 5, 6, 8):
+                komorka.number_format = '0.000' if j == 5 else ('0.0' if j == 8 else '0')
+            if j in (7, 9) and wartosc is not None:
                 komorka.number_format = '0.00E+00'
 
     ostatni_wiersz_zloz = len(NAZWY_ALGORYTMOW) + WIERSZ_NAGLOWKA_ZLOZ
     skala_flops = ColorScaleRule(start_type='min', start_color='63BE7B', end_type='max', end_color='F8696B')
     ws_zloz.conditional_formatting.add(f'C{WIERSZ_NAGLOWKA_ZLOZ + 1}:C{ostatni_wiersz_zloz}', skala_flops)
+    ws_zloz.conditional_formatting.add(f'H{WIERSZ_NAGLOWKA_ZLOZ + 1}:H{ostatni_wiersz_zloz}', skala_flops)
     ws_zloz.freeze_panes = f'A{WIERSZ_NAGLOWKA_ZLOZ + 1}'
     ws_zloz.column_dimensions['B'].width = 55
     autoszerokosc(ws_zloz, max_szer=40)
     ws_zloz.column_dimensions['B'].width = 55  # opis złożoności jest długi - autoszerokosc przycięłaby go
+
+    # ==========================================================================
+    # ZAKŁADKA "Uczenie_adaptacyjne" - krzywa uczenia rodziny nauka_kary_* -
+    # WCZYTYWANA Z OSOBNYCH PLIKÓW <lokalizacja>_<algorytm>_uczenie.csv (jedna
+    # aktualizacja _czynnik_nauczony na dobę - patrz
+    # funkcja_nauka_kary_wspolna.py/test_wszystkie_rownolegle.py), NIE z
+    # PRZEGLAD_ZBIORCZY.csv (który ma jedną wartość na cały przebieg, nie
+    # pokazuje ZMIANY w czasie). Pomijana bez błędu, jeśli żadne takie pliki
+    # nie istnieją (np. przegląd nie obejmował algorytmów nauka_kary_*).
+    # ==========================================================================
+    pliki_uczenia = sorted(glob.glob(os.path.join(FOLDER_WYNIKOW, '*_uczenie.csv')))
+    if pliki_uczenia:
+        ramki_uczenia = []
+        for plik in pliki_uczenia:
+            ramka = pd.read_csv(plik)
+            ramka['timestamp'] = pd.to_datetime(ramka['timestamp'])
+            ramki_uczenia.append(ramka)
+        df_uczenie_wszystko = pd.concat(ramki_uczenia, ignore_index=True)
+        df_uczenie_wszystko['Algorytm'] = df_uczenie_wszystko['algorytm'].map(NAZWY_ALGORYTMOW)
+        df_uczenie_wszystko.sort_values(['lokalizacja', 'algorytm', 'timestamp'], inplace=True)
+        df_uczenie_wszystko['nr_aktualizacji'] = df_uczenie_wszystko.groupby(
+            ['lokalizacja', 'algorytm']).cumcount() + 1
+
+        ws_ucz = wb.create_sheet('Uczenie_adaptacyjne')
+        ws_ucz.cell(row=1, column=1, value=(
+            'Jeden wiersz = JEDNA aktualizacja czynnika uczonego (domyślnie raz na dobę symulowanego czasu) - '
+            'pokazuje jak _czynnik_nauczony (i kary, które go napędzają) zmienia się W CZASIE trwania symulacji, '
+            'w miarę jak algorytm "uczy się" zachowania szyny w danej lokalizacji.'
+        ))
+        ws_ucz.cell(row=1, column=1).font = Font(name=FONT_NAZWA, italic=True, size=9, color='555555')
+        ws_ucz.merge_cells(start_row=1, start_column=1, end_row=1, end_column=8)
+
+        WIERSZ_NAGLOWKA_UCZ = 2
+        naglowki_ucz = ['Lokalizacja', 'Algorytm', 'Nr aktualizacji', 'Data', 'Czynnik nauczony (°C)',
+                        'Kara: przegrzanie', 'Kara: śnieg', 'Kara: lód']
+        ustaw_naglowek(ws_ucz, WIERSZ_NAGLOWKA_UCZ, naglowki_ucz)
+
+        for i, wiersz in enumerate(df_uczenie_wszystko.itertuples(index=False), start=WIERSZ_NAGLOWKA_UCZ + 1):
+            wartosci = [wiersz.lokalizacja, wiersz.Algorytm, int(wiersz.nr_aktualizacji),
+                        wiersz.timestamp.strftime('%Y-%m-%d'), round(wiersz.czynnik_nauczony, 3),
+                        int(wiersz.kara_przegrzanie), int(wiersz.kara_snieg), int(wiersz.kara_lod)]
+            for j, wartosc in enumerate(wartosci, start=1):
+                komorka = ws_ucz.cell(row=i, column=j, value=wartosc)
+                komorka.font = FONT_ZWYKLY
+                komorka.border = OBRAMOWANIE_CIENKIE
+
+        ostatni_wiersz_ucz = len(df_uczenie_wszystko) + WIERSZ_NAGLOWKA_UCZ
+        ws_ucz.freeze_panes = f'A{WIERSZ_NAGLOWKA_UCZ + 1}'
+        ws_ucz.auto_filter.ref = f'A{WIERSZ_NAGLOWKA_UCZ}:H{ostatni_wiersz_ucz}'
+        autoszerokosc(ws_ucz)
+
+        # Wykres krzywej uczenia (jedna linia na algorytm) dla PIERWSZEJ
+        # lokalizacji, dla której mamy dane - reprezentatywny podgląd, żeby nie
+        # trzeba było przewijać całej (potencjalnie długiej) tabeli, żeby
+        # zobaczyć kształt krzywej. Pełne dane dla WSZYSTKICH lokalizacji są w
+        # tabeli powyżej.
+        pierwsza_lokalizacja = df_uczenie_wszystko['lokalizacja'].iloc[0]
+        wiersz_startowy_wykresu = WIERSZ_NAGLOWKA_UCZ + len(df_uczenie_wszystko) + 3
+        ws_ucz.cell(row=wiersz_startowy_wykresu - 1, column=1,
+                    value=f'Podgląd krzywej uczenia dla lokalizacji: {pierwsza_lokalizacja}').font = FONT_POGRUBIONY
+
+        chart = LineChart()
+        chart.title = f'Krzywa uczenia (czynnik_nauczony) - {pierwsza_lokalizacja}'
+        chart.x_axis.title = 'Nr aktualizacji (dni)'
+        chart.y_axis.title = 'Czynnik nauczony (°C)'
+        chart.width = 24
+        chart.height = 12
+
+        kolumna_pomocnicza = wiersz_startowy_wykresu
+        for algorytm_klucz in KLUCZE_UCZENIA_KARY:
+            podzbior = df_uczenie_wszystko[
+                (df_uczenie_wszystko['lokalizacja'] == pierwsza_lokalizacja)
+                & (df_uczenie_wszystko['algorytm'] == algorytm_klucz)
+            ]
+            if podzbior.empty:
+                continue
+            nazwa_kol = NAZWY_ALGORYTMOW.get(algorytm_klucz, algorytm_klucz)
+            ws_ucz.cell(row=kolumna_pomocnicza, column=10, value=nazwa_kol).font = FONT_POGRUBIONY
+            for k, wartosc in enumerate(podzbior['czynnik_nauczony'].tolist(), start=1):
+                ws_ucz.cell(row=kolumna_pomocnicza + k, column=10, value=round(float(wartosc), 3))
+            dane_serii = Reference(ws_ucz, min_col=10, min_row=kolumna_pomocnicza,
+                                    max_row=kolumna_pomocnicza + len(podzbior))
+            chart.add_data(dane_serii, titles_from_data=True)
+            kolumna_pomocnicza += len(podzbior) + 2
+
+        if chart.series:
+            ws_ucz.add_chart(chart, f'A{wiersz_startowy_wykresu}')
 
     # ==========================================================================
     # ZAKŁADKA "Wnioski" - tekst z realnie policzonymi liczbami (nie formuły)
