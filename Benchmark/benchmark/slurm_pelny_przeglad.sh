@@ -25,11 +25,18 @@
 # realne zużycie na zadanie jest wielokrotnie niższe, ale 1200G i tak zostaje -
 # to tani, praktycznie darmowy zapas bezpieczeństwa (node ma 1430G limitu).
 #
-# --cpus-per-task=48 / --time=2-16:00:00 (64h) = 3072 CPU-h dobrane pod
-# DOSTĘPNY BUDŻET KONTA (service-balance) - TO jest zasób, który trzeba
-# oszczędzać. Więcej rdzeni/czasu na tym samym koncie kończy się odrzuceniem
-# zgłoszenia (QOSGrpCPUMinutesLimit), niezależnie od tego, ile węzłów jest
-# fizycznie wolnych i ile RAM mają.
+# --cpus-per-task=48 / --time=12:00:00 (12h) = 576 CPU-h - ZMIERZONE (nie
+# szacowane) na podstawie realnych testów lokalnych z krokiem symulacji 10s
+# (patrz KROK_SYMULACJI_S w teście_wszystkie_rownolegle.py): 56 zadań (28
+# algorytmów x 2 lokalizacje, okno 2 dni) zajęło 1.4 min na 4 rdzeniach, co
+# ekstrapolowane na pełny zakres dat (43 lokalizacje x 28 algorytmów, ~151 dni)
+# daje szacunek rzędu 150-300 CPU-h - 576h (12h x 48 rdzeni) to bezpieczny
+# zapas ponad to, NIE ślepe zgadywanie jak poprzednia wersja (2-16:00:00 =
+# 3072h), która ledwo nie zmieściła się w dostępnym budżecie konta
+# (QOSGrpCPUMinutesLimit). Jeśli mimo to zabraknie czasu w trakcie liczenia,
+# zadanie zostanie przerwane - patrz mechanizm wznawiania (SZYNA_WZNOW) w
+# test_wszystkie_rownolegle.py, nic się wtedy nie zmarnuje, wystarczy zlecić
+# to samo zadanie jeszcze raz.
 #
 # Przed odpaleniem: sprawdź dostępne godziny CPU usługi (service-balance --check-cpu)
 # i dostępność węzłów (check-partitions) - patrz
@@ -49,7 +56,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=48
 #SBATCH --mem=1000G
-#SBATCH --time=2-16:00:00
+#SBATCH --time=12:00:00
 #SBATCH -p lem-cpu
 #SBATCH --output=szyna_pelny_%j.log
 # 48 rdzeni x 64h = 3072 CPU-h - dopasowane pod dostępny budżet konta

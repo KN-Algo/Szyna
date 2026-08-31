@@ -24,11 +24,15 @@
 # pokazać: która strategia (adaptacyjna vs nie) jest odporniejsza na
 # niepewność/dryf parametrów rzeczywistego obiektu.
 #
-# KOSZT: to jest 8x pełny przegląd (patrz slurm_pelny_przeglad.sh) - upewnij
-# się, że masz na to wystarczający budżet CPU-godzin (service-balance) PRZED
-# zleceniem całej tablicy zadań na raz. Każdy element tablicy to osobne
-# zadanie SLURM z WŁASNYM budżetem czasu/rdzeni - kolejkują się niezależnie,
-# nie muszą liczyć się jednocześnie.
+# KOSZT: to jest 8x pełny przegląd (patrz slurm_pelny_przeglad.sh) - KAŻDY z 8
+# elementów tablicy (--array=0-7) to OSOBNE zadanie SLURM z WŁASNĄ rezerwacją
+# cpus x czas (nie dzielą jednej puli) - przy --cpus-per-task=48/--time=12:00:00
+# to 576 CPU-h NA ELEMENT, razem do 4608 CPU-h dla całej tablicy, jeśli
+# wszystkie 8 ruszyłoby jednocześnie. W praktyce QOS i tak dopuści tylko tyle
+# jednocześnie, ile pozwala dostępny budżet (service-balance) - reszta
+# poczeka w kolejce (status PD, powód QOSGrpCPUMinutesLimit) i wystartuje
+# automatycznie, gdy wcześniejsze się skończą i zwolnią rezerwację - to
+# NORMALNE, nie błąd, nie trzeba nic ręcznie robić.
 #
 # Wyniki każdego scenariusza lądują w OSOBNYM podfolderze
 # wyniki/wrazliwosc_transmitancji/<scenariusz>/ (własny PRZEGLAD_ZBIORCZY.csv +
@@ -49,7 +53,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=48
 #SBATCH --mem=1000G
-#SBATCH --time=2-16:00:00
+#SBATCH --time=12:00:00
 #SBATCH -p lem-cpu
 #SBATCH --array=0-7
 #SBATCH --output=szyna_wrazliwosc_%A_%a.log

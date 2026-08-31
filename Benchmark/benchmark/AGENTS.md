@@ -201,7 +201,11 @@ odpala się dopiero przy przekroczeniu 2x limitu SENSOR_HISTORY_MAX_SAMPLES).
       CSV do 5/8 wierszy + ponowne uruchomienie -> poprawnie doliczyło tylko
       brakujące 3, finalny CSV ma wszystkie 8 z poprawnymi wartościami. Adresuje
       wprost obawę użytkownika o utratę wyników przy wyczerpaniu limitu
-      czasu/pamięci na klastrze.
+      czasu/pamięci na klastrze. Punkt kontrolny (PRZEGLAD_ZBIORCZY.csv)
+      zapisywany PO KAŻDYM zadaniu (nie co 10, jak pierwotnie) - koszt
+      pomijalny (pojedyncze ms) wobec czasu liczenia zadania (minuty), a
+      minimalizuje ilość pracy do policzenia ponownie, gdyby proces padł tuż
+      przed zapisem.
 - [x] **Budżet przełączeń** dla algorytmów o wyjściu binarnym/dyskretnym -
       `MAX_SWITCHES_PER_DAY` podniesione z 12 do 100/dzień (`SZYNA_MAX_PRZELACZEN_DZIEN`),
       wywiedzione z założonego budżetu ŻYCIOWEGO przekaźnika
@@ -246,6 +250,48 @@ odpala się dopiero przy przekroczeniu 2x limitu SENSOR_HISTORY_MAX_SAMPLES).
       algorytm, kolumna per scenariusz, wartość = % odchylenia energii od
       scenariusza referencyjnego (skala barwna: im większe odchylenie, tym
       gorsza odporność).
+
+## Orkiestracja wszystkich zadań SLURM naraz
+
+`uruchom_wszystko.sh` (zwykły skrypt bash, NIE sbatch - uruchamiany bezpośrednio
+`bash uruchom_wszystko.sh`) zleca WSZYSTKIE 4 zadania naraz w łańcuchu zależności
+SLURM (`sbatch --dependency=afterok:<job_id>`): smoke_test -> pelny_przeglad ->
+wrazliwosc_transmitancji -> test_awarie, sekwencyjnie (nie równolegle - żeby nie
+mnożyć jednoczesnej rezerwacji CPU-godzin i nie trafić znów na
+QOSGrpCPUMinutesLimit). Jeśli którekolwiek zadanie w łańcuchu zawiedzie
+(exit != 0), SLURM automatycznie anuluje resztę (DependencyNeverSatisfied) -
+zero ręcznej interwencji potrzebnej między zadaniami. Dodano też
+`slurm_test_awarie.sh` (brakujący dotąd sbatch script dla
+test_awarie_czujnikow.py, 16 rdzeni/100G/2h, partycja lem-cpu-short).
+
+## Pełna weryfikacja przed wdrożeniem na klaster (2026-08-27)
+
+Po serii zmian (rodzina nauka_kary_*, budżet przełączeń, wznawianie, test
+awarii czujników) wykonano pełny przegląd sprawdzający, czy nic się nie
+zepsuło:
+- [x] Składnia: wszystkie 43 pliki .py w projekcie kompilują się bez błędu.
+- [x] Regresja: 56/56 zadań (28 algorytmów x 2 lokalizacje, 2 dni) - 0 błędów,
+      wartości energii fizycznie sensowne.
+- [x] Excel: wszystkie 7 zakładek kompletne (Dane/Podsumowanie_algorytmy/
+      Podsumowanie_lokalizacje/Opisy_algorytmow/Zlozonosc_obliczeniowa/
+      Uczenie_adaptacyjne/Wnioski), wszystkie 28 algorytmów obecne wszędzie,
+      zero ostrzeżeń/błędów przy generowaniu.
+- [x] Test awaryjności czujników (`test_awarie_czujnikow.py`) - PIERWSZY RAZ
+      doprowadzony do końca (poprzednia próba przerwana wyłączeniem laptopa):
+      196/196 zadań (28 algorytmów x 7 scenariuszy), 0 błędów,
+      `Podsumowanie_awarii.xlsx` generuje się poprawnie. Sensowny wynik
+      przykładowy: fuzzy_ryzyko_3_opad z biasem +5°C na czujniku HRT drastycznie
+      niedogrzewa (max HRT spada do -2.6°C zamiast ~31°C) - dokładnie ten typ
+      wykrycia wrażliwości, po który ten test powstał.
+- [x] Analiza wrażliwości transmitancji - potwierdzona działająca RAZEM z
+      resztą zmian (dt=10, zrefaktorowany autotest, rodzina nauka_kary_* w tym
+      adaptacyjny nauka_kary_blizniak) - 4/4 zadania OK ze scenariuszem K+10%.
+- [x] Wznawianie przerwanego przebiegu - potwierdzone (patrz sekcja wyżej).
+- [x] Skrypty SLURM (`slurm_*.sh`) - sprawdzone bajt-po-bajcie: czyste
+      zakończenia linii LF (Unix), zero CRLF/samotnych CR - bezpieczne do
+      wgrania na klaster Linux (UWAGA: `grep -c $'\r'` w tym środowisku Bash
+      okazał się zawodny/dawał fałszywe alarmy - do weryfikacji zakończeń linii
+      używać bezpośredniego sprawdzenia bajtów w Pythonie, nie tego grepa).
 
 ## W trakcie / do ustalenia
 

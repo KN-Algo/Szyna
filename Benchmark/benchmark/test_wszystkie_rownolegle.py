@@ -375,10 +375,14 @@ def main():
                 print(f"[{zakonczone}/{len(zadania)}] OK {nazwa_lokalizacji}/{nazwa_algorytmu} "
                       f"energia={stats['energia_kwh']:.1f} kWh (upłynęło {elapsed_min:.1f} min)")
 
-            # Zapisujemy zbiorczą tabelę co jakiś czas - postęp widoczny na bieżąco,
-            # nawet jeśli przebieg zostanie przerwany w połowie.
-            if zakonczone % 10 == 0 or zakonczone == len(zadania):
-                pd.DataFrame(wyniki).to_csv(os.path.join(FOLDER_WYNIKOW, "PRZEGLAD_ZBIORCZY.csv"), index=False)
+            # Zapisujemy zbiorczą tabelę PO KAŻDYM zadaniu (nie co 10) - to jest
+            # jednocześnie "punkt kontrolny" do wznowienia (patrz WZNAWIAJ_PRZERWANE
+            # wyżej), więc im częściej, tym mniej pracy do policzenia PONOWNIE,
+            # gdyby proces padł (limit czasu/pamięci na klastrze, awaria węzła)
+            # tuż PRZED zapisem. Koszt zapisu CSV o co najwyżej kilkuset wierszach
+            # jest pomijalny (pojedyncze ms) wobec czasu liczenia jednego zadania
+            # (rzędu minut), więc nie ma powodu robić tego rzadziej.
+            pd.DataFrame(wyniki).to_csv(os.path.join(FOLDER_WYNIKOW, "PRZEGLAD_ZBIORCZY.csv"), index=False)
 
     calkowity_czas_min = (time.time() - t0) / 60.0
     print(f"\nZakończono w {calkowity_czas_min:.1f} min. Sukcesy: {len(wyniki)}/{liczba_zadan_ogolem} "
