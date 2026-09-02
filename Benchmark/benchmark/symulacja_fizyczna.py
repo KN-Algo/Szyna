@@ -204,8 +204,8 @@ def wylicz_skladowa_pogodowa(at_array, A_wd, B_wd, C_wd, D_wd, dt=1.0):
 def _get_power(controller, row, method_name):
     result = getattr(controller, method_name)(row)
     if isinstance(result, tuple):
-        return result[0]
-    return result
+        return result[0], result[1] if len(result) > 1 else None
+    return result, None
 
 
 def uruchom_kontroler(name, controller, method_name, df_1s, hrt_weather_all,
@@ -287,6 +287,13 @@ def uruchom_kontroler(name, controller, method_name, df_1s, hrt_weather_all,
     hist_lod = np.empty(len(df_1s))
     hist_precip_1s = np.empty(len(df_1s))
     hist_snow_1s = np.empty(len(df_1s))
+    # Cel (target_temperature)/need_heat z diagnostyki kontrolera (patrz
+    # _get_power) - NaN, gdy dany krok/algorytm nie zwrócił diagnostyki z
+    # jawnym celem (np. compute_control*, algorytm_z_normy, fuzzy_logic_*).
+    # Osobno od IAE/ISE/ITAE (te całkują błąd) - to surowy ślad do wykresów
+    # diagnostycznych (patrz test_diagnostyka_funkcji_ryzyka.py).
+    hist_target = np.full(len(df_1s), np.nan)
+    hist_need_heat = np.full(len(df_1s), np.nan)
 
     total_steps = len(df_1s)
     t0 = time.time()
@@ -296,6 +303,24 @@ def uruchom_kontroler(name, controller, method_name, df_1s, hrt_weather_all,
     switches = 0
     prev_power = None
     zabezpieczen_uzytych = 0
+
+    # --- JAKOŚĆ REGULACJI (IAE/ISE/ITAE) - patrz akumulacja niżej w pętli oraz
+    # przypis w stats na końcu funkcji. Liczone TYLKO na krokach, w których
+    # kontroler zwrócił diagnostykę z 'target_temperature' ORAZ 'need_heat'
+    # True (czyli faktycznie DĄŻY do jakiegoś celu) - algorytmy bez takiej
+    # diagnostyki (compute_control*, algorytm_z_normy, fuzzy_logic_*, które
+    # zwracają samą moc bez celu) mają te pola None w stats. 'episode_time_s'
+    # to czas OD POCZĄTKU BIEŻĄCEGO epizodu grzania (resetowany za każdym
+    # przejściem need_heat False->True) - ITAE liczone względem NIEGO, nie
+    # względem absolutnego czasu symulacji, żeby długie przebiegi (miesiące)
+    # nie były zdominowane przez wagę z samej długości symulacji, tylko
+    # faktycznie karały POWOLNE dochodzenie do celu w KAŻDYM epizodzie z osobna. ---
+    iae_suma = 0.0
+    ise_suma = 0.0
+    itae_suma = 0.0
+    iae_liczba_krokow = 0
+    episode_time_s = 0.0
+    need_heat_poprzednio = False
 
     # Maska "ochrona aktywna": nie tylko GDY jest już śnieg (u nas lub u normy),
     # ale też z WYPRZEDZENIEM o punkty_opoznienia kroków przed nadejściem śniegu
@@ -347,7 +372,7 @@ def uruchom_kontroler(name, controller, method_name, df_1s, hrt_weather_all,
         }
 
         row_dla_kontrolera = fault_injector(row, index) if fault_injector is not None else row
-        power_percent = _get_power(controller, row_dla_kontrolera, method_name)
+        power_percent, diagnostics = _get_power(controller, row_dla_kontrolera, method_name)
 
         if snow_reference_mm is not None and (snow_depth_mm_pre > 0.01 or ochrona_aktywna[index]):
             moc_normy = power_reference_pct[index]
@@ -371,6 +396,28 @@ def uruchom_kontroler(name, controller, method_name, df_1s, hrt_weather_all,
 
         current_hrt = hrt_weather_comp + hrt_heating_comp
         current_crt = hrt_weather_comp
+
+        if diagnostics is not None:
+            need_heat_flag = bool(diagnostics.get('need_heat'))
+            hist_need_heat[index] = 1.0 if need_heat_flag else 0.0
+            target_temperature = diagnostics.get('target_temperature')
+            if target_temperature is not None:
+                hist_target[index] = float(target_temperature)
+            if need_heat_flag:
+                episode_time_s = episode_time_s + dt if need_heat_poprzednio else dt
+                need_heat_poprzednio = True
+                if target_temperature is not None:
+                    error = float(target_temperature) - current_hrt  # cel vs RZECZYWISTA (fizyczna) HRT
+                    iae_suma += abs(error) * dt
+                    ise_suma += (error * error) * dt
+                    itae_suma += episode_time_s * abs(error) * dt
+                    iae_liczba_krokow += 1
+            else:
+                need_heat_poprzednio = False
+                episode_time_s = 0.0
+        else:
+            need_heat_poprzednio = False
+            episode_time_s = 0.0
 
         snow_mm, ice_mm = ice_model.update(
             ts, at_temp, dew_point, wind_array[index], 1009.0,
@@ -413,6 +460,8 @@ def uruchom_kontroler(name, controller, method_name, df_1s, hrt_weather_all,
         'Lod_mm': hist_lod,
         'PRECIP_opad_1s': hist_precip_1s,
         'SNOW_snieg_1s': hist_snow_1s,
+        'Target_temperature': hist_target,
+        'Need_heat': hist_need_heat,
     })
     df_hist['Energia_kWh_1s'] = (df_hist['Moc_procent'] / 100.0) * MOC_ZAMIANOWA_GRZALKI_KW * (dt / 3600.0)
     df_hist['Energia_kWh_skumulowana'] = df_hist['Energia_kWh_1s'].cumsum()
@@ -434,6 +483,13 @@ def uruchom_kontroler(name, controller, method_name, df_1s, hrt_weather_all,
         # None dla kontrolerów bez tego licznika (nie powinno się zdarzyć,
         # wszystkie 23 algorytmy go mają, ale getattr na wszelki wypadek).
         'flops_rzeczywiste': getattr(controller, '_flops_licznik', None),
+        # --- Jakość regulacji (patrz akumulacja IAE/ISE/ITAE wyżej w pętli) -
+        # None, gdy algorytm nigdy nie zwrócił diagnostyki z target_temperature
+        # (compute_control*, algorytm_z_normy, fuzzy_logic_* - brak jawnego
+        # celu ciągłego, nie da się policzyć błędu regulacji). ---
+        'iae': iae_suma if iae_liczba_krokow > 0 else None,
+        'ise': ise_suma if iae_liczba_krokow > 0 else None,
+        'itae': itae_suma if iae_liczba_krokow > 0 else None,
     }
     if print_progress and snow_reference_mm is not None:
         print(f"  Bezpiecznik parytetu ze śniegiem z normy zadziałał {zabezpieczen_uzytych} razy.")

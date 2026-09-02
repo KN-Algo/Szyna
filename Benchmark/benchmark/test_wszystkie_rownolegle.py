@@ -73,8 +73,14 @@ _max_dni_env = os.environ.get('SZYNA_MAX_DNI')
 MAX_DNI_NA_LOKALIZACJE = int(_max_dni_env) if _max_dni_env else None
 
 # Co ile sekund zapisujemy przebieg do CSV (patrz symulacja_fizyczna.przygotuj_do_zapisu) -
-# statystyki i tak liczone są z pełnej rozdzielczości 1s przed tym zmniejszeniem.
-ZAPISZ_CO_N_SEKUND = int(os.environ.get('SZYNA_ZAPISZ_CO_N_SEKUND', '60'))
+# statystyki (IAE/ISE/ITAE/energia/...) i tak liczone są z PEŁNEJ rozdzielczości
+# obliczeniowej (SZYNA_KROK_S, domyślnie 10s) PRZED tym zmniejszeniem - to
+# ZMNIEJSZA WYŁĄCZNIE rozmiar zapisywanych plików CSV na dysku, nie dokładność
+# żadnej liczby w PRZEGLAD_ZBIORCZY.csv/Excelu. Domyślnie 600s (10 min) - na
+# życzenie użytkownika (2026-09-02): liczymy nadal gęsto (10s), ale ZAPISUJEMY
+# rzadziej, bo per-krokowe CSV przy pełnym zakresie dat są duże, a do
+# wizualnej inspekcji krzywej 10-15 min rozdzielczości w zupełności starcza.
+ZAPISZ_CO_N_SEKUND = int(os.environ.get('SZYNA_ZAPISZ_CO_N_SEKUND', '600'))
 
 # Ustaw zmienną środowiskową SZYNA_LICZBA_WATKOW, żeby wymusić konkretną liczbę
 # procesów zamiast autodetekcji (przydatne, gdy z jakiegoś powodu nie chcesz
@@ -400,7 +406,8 @@ def main():
     df_wszystkie = pd.DataFrame(wyniki)
     kolumny = ['lokalizacja', 'name', 'scenariusz', 'perturb_k_pct', 'perturb_t1_pct', 'perturb_t2_pct',
                'perturb_l_pct', 'energia_kwh', 'przelaczenia', 'max_snieg_mm', 'max_lod_mm', 'max_hrt', 'min_hrt',
-               'srednia_moc_pct', 'godziny_ze_sniegiem', 'zabezpieczen_normy_uzytych', 'dni', 'flops_rzeczywiste']
+               'srednia_moc_pct', 'godziny_ze_sniegiem', 'zabezpieczen_normy_uzytych', 'dni', 'flops_rzeczywiste',
+               'iae', 'ise', 'itae']
     kolumny = [k for k in kolumny if k in df_wszystkie.columns]
     df_wszystkie = df_wszystkie[kolumny]
     df_wszystkie.to_csv(os.path.join(FOLDER_WYNIKOW, "PRZEGLAD_ZBIORCZY.csv"), index=False)

@@ -130,6 +130,12 @@ class AutomatPogodowyNorma:
                 self.switch_count_today += 1
             # W przeciwnym razie limit wyczerpany - zostajemy przy poprzednim stanie.
 
+        # --- DIAGNOSTYKA (do IAE/ISE/ITAE - patrz symulacja_fizyczna.uruchom_kontroler):
+        # jak w histereza_let1.compute_control - gdy grzeje, cel to próg WYŁĄCZENIA
+        # aktywnej gałęzi (opady/suchy mróz). ---
+        target_temperature = self.hrt_off_precip if opad_wykryty else self.hrt_off_dry
+        diagnostics = {'target_temperature': target_temperature, 'need_heat': self.heating_on}
+
         # 5. Wyjście binarne: automat pogodowy wg normy zna tylko załącz/wyłącz.
         self._flops_licznik += 18  # Porównania progów + logika stanu (stały koszt/krok).
-        return 100.0 if self.heating_on else 0.0
+        return (100.0 if self.heating_on else 0.0), diagnostics

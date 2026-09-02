@@ -62,13 +62,19 @@ zachowaniu wymaganego poziomu bezpieczeństwa (norma jako twardy wyznacznik).
     Opisy_algorytmow, Zlozonosc_obliczeniowa, Wnioski). Wywoływane
     automatycznie na końcu `test_wszystkie_rownolegle.py`.
 
-## Zbiór algorytmów (23 sztuki, w `rejestr_algorytmow.ALGORYTMY`)
+## Zbiór algorytmów (30 sztuk, w `rejestr_algorytmow.ALGORYTMY`)
 
-Rodziny: automat/histereza wg normy (2), funkcja ryzyka binarna/PID (2) + ich
-warianty `_opad` (2), PID/fuzzy do progów normy (5), fuzzy logic "surowy" wokół
-stałego celu (4), fuzzy + funkcja ryzyka (4) + ich warianty `_opad` (4).
+Rodziny: automat/histereza wg normy (2, + wariant górski `compute_control_gorski`
+= 3), funkcja ryzyka binarna/PID (2) + ich warianty `_opad` (2), PID/fuzzy do
+progów normy (5), fuzzy logic "surowy" wokół stałego celu (4), fuzzy + funkcja
+ryzyka (4) + ich warianty `_opad` (4), uczenie adaptacyjne z kar `nauka_kary*`
+(5 — bazowy + temp/opad/bliźniak/ryzyko).
 Dokładne opisy typu/celu/adaptacyjności — patrz zakładka "Opisy_algorytmow" w
-Excelu albo bezpośrednio `rejestr_algorytmow.py`.
+Excelu albo bezpośrednio `rejestr_algorytmow.py`. Opis DZIAŁANIA każdego
+algorytmu z osobna (bardziej szczegółowy niż jednolinijkowy `opis` w
+rejestrze) — patrz `notatki/algorytmy/*.md` (jeden plik na algorytm,
+**musi być aktualizowany w tym samym kroku co zmiana logiki danego
+algorytmu** — patrz `notatki/algorytmy/README.md`).
 
 ## Wdrożenie na superkomputer (WCSS)
 
@@ -250,6 +256,178 @@ odpala się dopiero przy przekroczeniu 2x limitu SENSOR_HISTORY_MAX_SAMPLES).
       algorytm, kolumna per scenariusz, wartość = % odchylenia energii od
       scenariusza referencyjnego (skala barwna: im większe odchylenie, tym
       gorsza odporność).
+- [x] **Test skuteczności `przewidywanie_opadow.py`** (`test_skutecznosc_prognozy_opadow.py`,
+      w katalogu głównym) - ocenia dokładnie tę klasę, która realnie jedzie w
+      produkcji (`Algorytmy/funkcja_ryzyka_wspolne.KontrolerRyzykaOpadBazowy`),
+      na WSZYSTKICH 43 plikach pogodowych, z auto-wykryciem kroku próbkowania
+      (15 vs 60 min) per plik. Lokalny, bez klastra (~6s na wszystkie 43
+      pliki). Wynik: `wyniki/Podsumowanie_prognozy_opadow.xlsx` (3 zakładki:
+      Wyniki_lokalizacje, Podsumowanie_ogolne, Definicje_poziomow). Zmierzone:
+      80.1% globalna skuteczność osłony, 81.3% trafność alarmu (duży rozrzut
+      między lokalizacjami, np. wroclaw_2024 tylko 62% trafności).
+- [x] **Pogłębiona wrażliwość transmitancji + szumu na 2 lokalizacjach**
+      (`test_wrazliwosc_dwie_lokalizacje.py` + `generuj_excel_wrazliwosc.py` +
+      `slurm_wrazliwosc_2lok.sh`) - Abisko (najwięcej opadu/śniegu) i Ojmiakon
+      (najzimniejsza), 14 scenariuszy transmitancji (K/L/T1 pojedynczo +10/+20%
+      i w kombinacjach, do potrójnego K20+L20+T1_20) x 2 warianty (z/bez
+      białego szumu 2.0°C std na HRT+CRT, ten sam mechanizm co
+      `test_awarie_czujnikow.py`) x wszystkie algorytmy. Dla algorytmów
+      adaptacyjnych DODATKOWO porównuje zidentyfikowane K/T1/L (z
+      `controller.autotest_result`) z PRAWDZIWYMI zaburzonymi wartościami
+      (`symulacja_fizyczna.K_H/T1_H/L_H * (1+pct/100)`) - kolumny
+      `blad_identyfikacji_*_pct`. Zweryfikowane end-to-end (smoke test, 24/24
+      zadań, obie lokalizacje, Excel z 4 zakładkami). PRELIMINARY FINDING
+      (smoke test, 3-dniowe okno - do potwierdzenia na pełnym 45-dniowym
+      przebiegu): szum 2°C na HRT/CRT DRASTYCZNIE psuje identyfikację SOPDT
+      (błąd K/T1 rzędu -97%/-99% w jednym obserwowanym przypadku, mimo
+      `fit_ok=True`) - autotest wygląda na bardzo nieodporny na realistyczny
+      szum czujników w krótkim oknie identyfikacji. NIE URUCHOMIONE jeszcze w
+      pełnej skali (~60-90 core-h szacunkowo dla okna 45 dni) - czeka na
+      decyzję: lokalnie (dłużej) czy `sbatch slurm_wrazliwosc_2lok.sh`.
+- [x] **IAE/ISE/ITAE (jakość regulacji)** — `symulacja_fizyczna.uruchom_kontroler`
+      teraz przechwytuje diagnostykę zwracaną przez algorytm (`_get_power`
+      zwraca `(moc, diagnostics)` zamiast samej mocy) i całkuje błąd
+      `target_temperature - HRT_rzeczywista` PO CZASIE, tylko na krokach z
+      `need_heat=True` (poza tym target=HRT z definicji, zerowy błąd byłby
+      sztuczny). ITAE liczone względem czasu OD POCZĄTKU BIEŻĄCEGO epizodu
+      grzania (reset przy każdym need_heat False→True), nie względem
+      absolutnego czasu symulacji - inaczej długie przebiegi (miesiące)
+      byłyby zdominowane samą swoją długością. DOPISANE (2026-09-02, na wyraźne
+      życzenie użytkownika - "dla każdego algorytmu, w głównej pętli") do
+      WSZYSTKICH 29 algorytmów, w tym tych bez natywnego ciągłego celu:
+      `compute_control`/`compute_control_gorski`/`algorytm_z_normy` teraz
+      zwracają diagnostykę z `target_temperature` = próg WYŁĄCZENIA aktywnej
+      gałęzi (opady/suchy mróz) gdy `heating_on`, bo to ten próg kończy dany
+      epizod grzania; `fuzzy_logic_1/2/2v2/3` zwracają
+      `target_temperature = T_ZADANA` (stały cel), `need_heat=True` zawsze -
+      te cztery wcześniej zwracały SAMĄ moc bez krotki, teraz `(moc,
+      diagnostics)` jak reszta (`_get_power` już to obsługiwał). Zweryfikowane:
+      29/29 algorytmów ma `iae` niepuste w PRZEGLAD_ZBIORCZY.csv. Dodane do `PRZEGLAD_ZBIORCZY.csv`
+      (test_wszystkie_rownolegle.py), `AWARIE_ZBIORCZY.csv`
+      (test_awarie_czujnikow.py) i zakładek "Dane"/"Podsumowanie_algorytmy" w
+      Excelu. Przy okazji dodano też "Max śnieg GLOBALNIE" per algorytm
+      (MAXIFS przez wszystkie przebiegi, nie tylko średnia) do
+      "Podsumowanie_algorytmy". Zweryfikowane end-to-end (3 algorytmy, 2 dni -
+      poprawne None dla nieadaptacyjnych bez celu, realne liczby dla
+      risk_function_pid).
+- [x] **Diagnostyka wizualna funkcji ryzyka** (`test_diagnostyka_funkcji_ryzyka.py`) -
+      uruchamia wybrane algorytmy (domyślnie `risk_function_pid`) na jednej
+      lokalizacji (domyślnie Abisko, okno 14 dni), zapisuje CSV per algorytm +
+      Excel z wykresami (AT/CRT/HRT/Target_temperature razem, osobno moc %) -
+      korzysta z nowych kolumn `Target_temperature`/`Need_heat`, które
+      `uruchom_kontroler` teraz ZAWSZE dopisuje do `df_hist` (NaN, gdy
+      algorytm nie ma jawnego celu - ten sam mechanizm co IAE/ISE/ITAE).
+      Zweryfikowane (2 algorytmy, 5 dni, 2 zakładki + 4 wykresy poprawnie).
+- [x] **Wrażliwość na krok sterowania** (`test_wrazliwosc_kroku_sterowania.py`) -
+      dla wskazanych algorytmów (domyślnie 3 kandydaci: `risk_function_pid`,
+      `nauka_kary_ryzyko`, `fuzzy_ryzyko_1` - PODMIENIĆ na faktyczne top-3, gdy
+      znane z pełnego przeglądu) sprawdza energię i IAE/ISE/ITAE przy kroku
+      1/10/60/300/600s, na WSZYSTKICH lokalizacjach (domyślnie okno 30 dni dla
+      szybkości). Wykres średniej energii vs krok w Excelu. Zweryfikowane (2
+      algorytmy x 2 kroki x 1 lokalizacja, 4/4 OK).
+- [x] **Wstępny ranking (2 lokalizacje, okno 30 dni, wszystkie 29 algorytmów)** -
+      zakończony (2026-09-02). Ranking wg średniej energii (abisko+ojmiakon):
+      DOMINUJE rodzina fuzzy (18 pierwszych miejsc, 4036-4250 kWh) - PID/histereza
+      (risk_function*, norma_pid, nauka_kary*, compute_control*) wyraźnie
+      wyżej (5556-6705 kWh, +38% do +66%). #1 ogólnie: `fuzzy_ryzyko_2v2_opad`
+      (4036.6 kWh). WAŻNA PUŁAPKA znaleziona po drodze: pierwszy przebieg miał
+      1 brakujące zadanie (nauka_kary_ryzyko/ojmiakon, zgubione mimo
+      "Zakończono... Sukcesy: 57/58" w logu - proces widocznie padł tuż przed
+      dopisaniem ostatniego wiersza) - średnia energia z n=1 (tylko Abisko,
+      2968.5) była MYLĄCO niska; po dopisaniu brakującego zadania (Ojmiakon,
+      9917.7) prawdziwa średnia to 6443.1 - WNIOSEK: zawsze sprawdzaj `n` przy
+      agregacji wyników rankingowych, nie ufaj samej liczbie "Sukcesy: X/Y" w
+      logu bez policzenia realnych wierszy w CSV.
+      TOP-3 wybrane do grid-search NIE są literalnym top-3 wg energii (to by
+      były 3 prawie identyczne warianty `fuzzy_ryzyko_*`, strojące TE SAME
+      stałe RISK_* - nieinformatywne) - zamiast tego 3 ZRÓŻNICOWANI zwycięzcy,
+      po jednym z każdej rodziny strojalnych stałych:
+        1. `fuzzy_ryzyko_2v2_opad` (#1 ogólnie, 4036.6 kWh) - stałe RISK_* w
+           funkcja_ryzyka_wspolne.py (współdzielone z risk_function*, wszystkimi fuzzy_ryzyko_*).
+        2. `fuzzy_normy_2v2` (#8, 4079.9 kWh) - stałe NORMA_* w funkcja_normy_wspolne.py
+           (współdzielone z norma_pid, wszystkimi fuzzy_normy_*).
+        3. `nauka_kary_opad` (najlepszy z rodziny uczenia z kar, 6127.3 kWh) -
+           stałe KARA_*/WSPOLCZYNNIK_UCZENIA_C/CZYNNIK_NAUCZONY_MIN/MAX_C w
+           funkcja_nauka_kary_wspolna.py.
+      Użyte jako domyślne w `test_wrazliwosc_kroku_sterowania.py`
+      (SZYNA_ALGORYTMY_KROK) - PODMIEŃ, jeśli użytkownik zażąda literalnego top-3.
+- [ ] **Strojenie progów (grid search)** - NASTĘPNY KROK, na bazie powyższego
+      top-3: grid search na RISK_*/NORMA_*/KARA_* per algorytm, metodologia:
+      strojenie na 2 lokalizacjach (Abisko+Ojmiakon), walidacja na reszcie.
+- [x] **Nowy algorytm: `risk_function_pid_auto`** (2026-09-02) - REALNA implementacja
+      propozycji auto-strojenia (`notatki/propozycja_auto_strojenie.md`), na
+      bazie `risk_function_pid` (nie fuzzy_ryzyko/nauka_kary mimo lepszego
+      rankingu - użytkownik chciał konkretnie "tej funkcji ryzyka"). Stroi 4
+      progi (hrt_on_precip, at_low_freeze, hrt_on_dry, risk_snow_penalty_per_mm_c)
+      co 7 dni metodą perturb-and-observe. Wymagało PROMOCJI
+      `RISK_SNOW_PENALTY_PER_MM_C` z modułowej stałej na atrybut instancji w
+      `funkcja_ryzyka_wspolne.KontrolerRyzykaBazowy` (zero zmiany zachowania
+      dla pozostałych 29 algorytmów - domyślna wartość = stała modułowa).
+      Zweryfikowane: 30/30 algorytmów w smoke teście, progi realnie oscylują
+      zgodnie z logiką hill-climbingu (prześledzone ręcznie), własna zakładka
+      Excela "Strojenie_progow_ryzyka" (schemat inny niż "Uczenie_adaptacyjne"
+      rodziny nauka_kary_*, stąd rozdzielone - `pliki_uczenia` w
+      generuj_excel_podsumowanie.py teraz filtrowane do TYLKO
+      KLUCZE_UCZENIA_KARY, żeby nie mieszać niekompatybilnych schematów CSV).
+      Patrz notatki/algorytmy/risk_function_pid_auto.md po pełny opis i
+      zaobserwowane ograniczenie (koszt zaszumiony zmiennością pogody).
+- [x] **Redukcja złożoności pamięciowej: bufor kroczący zamiast surowej
+      historii** (2026-09-02, na życzenie użytkownika) - `rdzen_kontrolera.KontrolerBazowy`
+      trzymał surową historię odczytów (`self.sensor_history` - lista obiektów
+      RowData, okazała się CAŁKOWICIE NIEUŻYWANA nigdzie poza samym
+      dopisywaniem, usunięta; `_hist_bin_ids/_hist_at/_hist_crt` - listy rosnące
+      do 86400 próbek, re-binowane OD ZERA co TEMP_FORECAST_REFRESH_S przez
+      `_bin_average_core`) - O(min(krok,86400)) pamięci NA INSTANCJĘ kontrolera.
+      Zastąpione bufora KROCZĄCEJ ŚREDNIEJ 15-minutowej (`_roll_bin_ids/_roll_means_at/_crt`,
+      `deque(maxlen=MAX_ROLLING_HISTORY=36)`) aktualizowanego PRZYROSTOWO w
+      `_append_sensor_history` (sumowanie bieżącego binu + domknięcie przy
+      zmianie bin_id) - O(1)/O(36) pamięci NIEZALEŻNIE od długości symulacji.
+      Matematycznie równoważne (bin_id w tym symulatorze zawsze ściśle
+      kolejne, więc interpolacja luk w `_forecast_attribute` jest no-opem w
+      praktyce - "ostatnie 36 binów z małego bufora" == "ostatnie 36 binów
+      wyliczone z całej historii"). ZWERYFIKOWANE: (1) izolowany test
+      regresyjny (deterministyczna syntetyczna seria odczytów, 600 kroków, 8
+      checkpointów) - `temperature_prediction()`/`rail_temperature_prediction()`
+      BIT-IDENTYCZNE stary/nowy kod; (2) pełny smoke test 29/29 algorytmów
+      (abisko, 3 dni) - te same wartości energii co przed zmianą; (3) pomiar
+      pamięci (tracemalloc, 200k kroków ~23 dni) - stary kod: ~45MB rosnącej
+      pamięci związanej z historią, nowy kod: ~0MB (RowData od razu
+      zbierane przez GC, brak referencji trzymanej długoterminowo). Przy okazji
+      USUNIĘTA martwa funkcja `_bin_average_core` (JIT numba) i stała
+      `SENSOR_HISTORY_MAX_SAMPLES` (obie nieużywane po zmianie) - FLOPy w
+      `_forecast_attribute` też spadły (koszt liczony teraz na ≤37 binach, nie
+      na całej surowej historii) - TODO: przeliczyć `zlozonosc_pamieciowa`/
+      `pamiec_przyblizona_mb`/`flops_na_krok` w rejestr_algorytmow.py dla
+      wszystkich algorytmów dziedziczących KontrolerBazowy (nagłówek pola już
+      zaktualizowany z ostrzeżeniem, wartości liczbowe jeszcze NIE
+      przeliczone - zostały stare, zawyżone szacunki jako bezpieczna górna granica).
+- [x] **Rozdzielczość zapisu CSV zwiększona do 10 min** (2026-09-02, na
+      życzenie użytkownika) - `SZYNA_ZAPISZ_CO_N_SEKUND` domyślnie `600`
+      (10 min, było `60`=1 min) w `test_wszystkie_rownolegle.py` i
+      `test_wszystkie_algorytmy_wszystkie_lokalizacje.py` - dotyczy WYŁĄCZNIE
+      zapisywanych plików CSV (mniejsze pliki), statystyki (energia/IAE/ISE/ITAE/...)
+      liczone jak zawsze z pełnej rozdzielczości obliczeniowej (SZYNA_KROK_S)
+      PRZED tym zmniejszeniem - zero wpływu na dokładność liczb w Excelu.
+- [x] **Pełny test szumu wielu czujników** (`test_szum_wielu_czujnikow.py` +
+      `slurm_szum_wielu_czujnikow.sh`, 2026-09-02) - w odróżnieniu od
+      `test_awarie_czujnikow.py` (3 typy awarii, 2 czujniki, 1 poziom, 1
+      lokalizacja) ten skrypt sprawdza 4 POZIOMY białego szumu (lekki/
+      umiarkowany/silny/ekstremalny, kalibrowane osobno per typ sygnału) na 7
+      czujnikach (HRT/CRT/AT/punkt rosy/wiatr/opad/śnieg) x 10 LOSOWYCH
+      lokalizacji (seed=20260902, powtarzalny wybór) x wszystkie 29 algorytmów
+      = 8410 zadań. IAE/ISE/ITAE liczone jak zawsze w głównej pętli
+      (`uruchom_kontroler`), więc automatycznie w wynikach. Zweryfikowane
+      (2 lokalizacje x 2 algorytmy x 29 scenariuszy = 116/116 OK, 5.6 min).
+      KOSZT PEŁNEJ SKALI: zmierzone ~0.19 core-min/zadanie przy oknie 2-dniowym,
+      ekstrapolacja do domyślnego okna 10-dniowego (5x) ≈ 135 core-h szacunkowo
+      - NIE URUCHOMIONE jeszcze w pełnej skali, czeka na decyzję (lokalnie w
+      tle vs `sbatch slurm_szum_wielu_czujnikow.sh`).
+- [x] **`notatki/` - dokumentacja poza kodem** - `notatki/FLOPs.md` (pełny
+      mechanizm liczenia FLOPs, analityczny vs rzeczywisty, z tabelą WSZYSTKICH
+      miejsc `_dodaj_flopy` w kodzie) + `notatki/algorytmy/*.md` (jeden plik
+      opisowy na każdy z 28 algorytmów, `README.md` tam jako indeks). Musi być
+      aktualizowane razem ze zmianami kodu - patrz przypis przy "Zbiór
+      algorytmów" wyżej.
 
 ## Orkiestracja wszystkich zadań SLURM naraz
 
@@ -295,24 +473,32 @@ zepsuło:
 
 ## W trakcie / do ustalenia
 
-- [ ] **Nowa rodzina algorytmów: PID z "czynnikiem opadu"** — PID dążący do
-      błędu=0, z offsetem setpointu rosnącym wraz z ryzykiem oblodzenia/opadem,
-      anti-windup ograniczający narastanie błędu. USTALONE z użytkownikiem:
-      MUSI samodzielnie estymować ile śniegu zalega/stopiło się na podstawie
-      historii opad+temperatura (NIE korzysta z prawdziwej grubości śniegu z
-      symulacji) - bo ma to być docelowo spójne z tym, co widziałby prawdziwy
-      sterownik na sprzęcie (bez dostępu do danych "z boga" symulacji fizycznej).
-      Warianty: bazowy, + prognoza temperatury (Kalman AT), + prognoza opadu
-      (`przewidywanie_opadow.py`). Zaprojektowany szkic mechanizmu (jeszcze nie
-      zaimplementowany): licznik `czynnik_opadu` rośnie przy wykrytym opadzie
-      śniegu (na podstawie zmierzonego opadu), maleje wg szacowanego tempa
-      topnienia gdy HRT > 0°C; setpoint PID = baza (np. próg suchego mrozu) +
-      offset proporcjonalny do `czynnik_opadu` (z górnym limitem, podobnie jak
-      RISK_SNOW_PENALTY_* w funkcja_ryzyka_wspolne.py). DODATKOWO (ustalone
-      później z użytkownikiem): offset/czynnik ma też rosnąć, gdy HRT zbliża
-      się do -10°C (ochrona przed floorem) - niezależnie od opadu, analogicznie
-      do RISK_HRT_FLOOR_TRIGGER_C/RISK_HRT_ABSOLUTE_FLOOR_C już istniejących w
-      funkcja_ryzyka_wspolne.py.
+- [x] **Nowa rodzina algorytmów: uczenie adaptacyjne z kar** — zrealizowana
+      jako `nauka_kary*` (5 wariantów: bazowy, `_temp`, `_opad`, `_blizniak`,
+      `_ryzyko` — patrz `notatki/algorytmy/nauka_kary.md` i pochodne).
+- [x] **Naprawiono: estymacja grubości śniegu PRZEZ KONTROLER, nie ground
+      truth** (2026-09-02) — `_evaluate_risk_setpoint` i
+      `_evaluate_nauczony_setpoint` czytały wprost `row_data['SNIEG_GRUBOSC_MM']`,
+      które w `symulacja_fizyczna.py` jest ustawiane z PRAWDZIWEJ
+      `ice_model.snow_depth_m` (ground truth, dostępne tylko bezpiecznikowi
+      symulacji) - niespójne z wymogiem samodzielnej estymacji przez
+      sterownik. Naprawione: `rdzen_kontrolera.KontrolerBazowy._estymuj_grubosc_sniegu_mm`
+      liczy WŁASNY, prosty bilans masy (przyrost z odczytu intensywności
+      opadu śniegu SNOW_snieg × dt, ubytek wg prostego modelu degree-day
+      proporcjonalnego do HRT>0°C, stała `SNIEG_TOPNIENIE_MM_S_NA_C=0.001`) -
+      obie metody teraz wołają tę metodę zamiast czytać pole z row_data.
+      Ponieważ liczone z pól row_data, ten estymator automatycznie dziedziczy
+      podatność na fault_injector (bias/szum/rozłączenie) używany w
+      `test_awarie_czujnikow.py` - nie trzeba osobnego mechanizmu zaszumiania.
+      Zweryfikowane: 28/28 algorytmów przechodzi smoke test bez błędów po
+      zmianie (test_wszystkie_rownolegle.py, abisko_60min_2024, 3 dni).
+- [x] **Nowy algorytm: `compute_control_gorski`** — wariant `compute_control`
+      dla rejonów górskich wg LET-1 pkt 2.4.18.7 ("W rejonach górskich gdzie
+      występują bardzo intensywne opady śniegu... można ustawić temperaturę
+      wyłączenia na +10°C") - podnosi WYŁĄCZNIE próg wyłączenia HRT przy
+      opadach z 7.0°C na 10.0°C (`histereza_let1_gorski.py`). Wartość
+      potwierdzona przez użytkownika bezpośrednim cytatem z normy
+      (2026-09-02), nie zgadywana.
 - [ ] **Wykresy skuteczności prognoz temperatury/opadu** w różnych warunkach
       (lokalizacjach/porach roku) - do zaprojektowania po zamknięciu #4.
 

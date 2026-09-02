@@ -28,4 +28,7 @@ class KontrolerFuzzy2v2:
         blad_T = self.T_ZADANA - hrt
         wynik = wnioskowanie_fl2v2(blad_T, hrt, precip, jest_snieg, jest_deszcz)
         self._flops_licznik += 48  # Silnik FL2v2 (4 funkcje przynależności + 7 reguł Sugeno).
-        return binaryzuj(wynik)
+        # Diagnostyka (do IAE/ISE/ITAE) - cel STAŁY (T_ZADANA), silnik dąży do niego
+        # cały czas, więc need_heat=True zawsze (patrz fuzzy_logic_1.py).
+        diagnostics = {'target_temperature': self.T_ZADANA, 'need_heat': True}
+        return binaryzuj(wynik), diagnostics

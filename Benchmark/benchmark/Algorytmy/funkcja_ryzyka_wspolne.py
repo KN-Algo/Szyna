@@ -51,6 +51,14 @@ class KontrolerRyzykaBazowy(KontrolerBazowy):
         self.hrt_on_precip = 4.0    # HRT załączenie przy opadach: +4°C (Tabela nr 5)
         self.at_low_freeze = -5.0   # Suchy mróz dolna granica: -5°C (Tabela nr 6)
         self.hrt_on_dry = 1.0       # HRT załączenie bez opadów: +1°C (Tabela nr 6)
+        # Kara za zalegający śnieg (patrz priorytet 2 w _evaluate_risk_setpoint) -
+        # PROMOWANA do atrybutu instancji (domyślnie = stała modułowa, zero zmiany
+        # zachowania dla wszystkich dotychczasowych algorytmów) wyłącznie po to,
+        # żeby funkcja_ryzyka_pid_auto_strojenie.KontrolerRyzykaPIDAutoStrojenie
+        # mogła ją bezpiecznie stroić PER INSTANCJA, bez ryzyka mutowania
+        # WSPÓLNEJ stałej modułowej (co zepsułoby WSZYSTKIE inne kontrolery w
+        # tym samym procesie roboczym).
+        self.risk_snow_penalty_per_mm_c = RISK_SNOW_PENALTY_PER_MM_C
         # _ostatnia_moc_autotestu i _autotest_startowy przeniesione do
         # rdzen_kontrolera.KontrolerBazowy (żeby były dostępne dla każdego
         # kontrolera, nie tylko rodziny funkcji ryzyka) - dziedziczone stąd bez zmian.
@@ -81,9 +89,14 @@ class KontrolerRyzykaBazowy(KontrolerBazowy):
              i opóźnienie transportowe rzędu ~20 minut - patrz autotest/L_H).
           4) Standardowy suchy mróz wg progów LET-1 (jak w histereza_let1.py).
 
-        Oczekuje opcjonalnego pola 'SNIEG_GRUBOSC_MM' w row_data (aktualna grubość
-        zalegającego śniegu na szynie, mm) - jeśli go brak, przyjmujemy 0.0 (brak
-        informacji o zaleganiu, zachowanie jak poprzednio).
+        Grubość zalegającego śniegu (mm) NIE jest czytana z row_data (to pole,
+        'SNIEG_GRUBOSC_MM', niesie PRAWDZIWĄ wartość z modelu fizycznego
+        symulacji i służy WYŁĄCZNIE bezpiecznikowi/referencji w
+        symulacja_fizyczna.py - kontroler nie ma do niej dostępu, dokładnie
+        jak prawdziwy sterownik) - liczona samodzielnie przez
+        self._estymuj_grubosc_sniegu_mm (bilans: przyrost z odczytu
+        intensywności opadu śniegu, ubytek z szacowanego tempa topnienia przy
+        HRT>0°C - patrz rdzen_kontrolera.KontrolerBazowy._estymuj_grubosc_sniegu_mm).
 
         dodatkowa_ucieczka_sniegu: opcjonalny callable(row_data, snow_depth_mm) ->
             (bool, opis_albo_None), wywoływany TYLKO w gałęzi śniegu i TYLKO gdy
@@ -102,7 +115,7 @@ class KontrolerRyzykaBazowy(KontrolerBazowy):
         precip = float(row_data['PRECIP_opad'])
         snow = float(row_data['SNOW_snieg'])
         rh_humidity = float(row_data['RH_wilgotnosc_wzgledna'])
-        snow_depth_mm = float(row_data.get('SNIEG_GRUBOSC_MM', 0.0))
+        snow_depth_mm = self._estymuj_grubosc_sniegu_mm(row_data)
 
         is_raining = precip > 0.0001
         is_snowing = snow > 0.0001
@@ -182,7 +195,7 @@ class KontrolerRyzykaBazowy(KontrolerBazowy):
                     reason = powod_ucieczki
                 else:
                     need_heat = True
-                    penalty = min(snow_depth_mm * RISK_SNOW_PENALTY_PER_MM_C, RISK_SNOW_PENALTY_MAX_C)
+                    penalty = min(snow_depth_mm * self.risk_snow_penalty_per_mm_c, RISK_SNOW_PENALTY_MAX_C)
                     target_temperature = self.hrt_on_precip + penalty
                     if snow_depth_mm > RISK_SNOW_LINGER_THRESHOLD_MM:
                         reason = f'zalegający śnieg ({snow_depth_mm:.0f} mm) - cel podniesiony o {penalty:.1f}°C, żeby go porządnie wytopić'

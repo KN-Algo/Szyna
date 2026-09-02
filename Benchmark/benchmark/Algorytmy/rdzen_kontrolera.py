@@ -13,6 +13,7 @@
 # wpisu w rejestr_algorytmow.py) - każdy właściwy algorytm dziedziczy po niej
 # (bezpośrednio albo przez funkcja_ryzyka_wspolne.KontrolerRyzykaBazowy).
 
+from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -36,7 +37,6 @@ NANOS_PER_BIN = STEP_SECONDS * 1_000_000_000  # Szerokość binu w nanosekundach
 HORIZON_STEPS = 8             # Liczba próbek w horyzoncie prognozy (8 próbek * 15 min = 2 godziny).
 MAX_ROLLING_HISTORY = 36      # Maksymalna liczba punktów historii brana pod uwagę przez model.
 
-SENSOR_HISTORY_MAX_SAMPLES = 43200       # Twardy limit pamięci (12h przy 1 Hz) - z zapasem ponad MAX_ROLLING_HISTORY (9h @ 15 min).
 TEMP_FORECAST_REFRESH_S = 300            # Odśwież prognozę Kalmana nie częściej niż raz na tyle sekund (5 min - obiekt ma stałe czasowe rzędu 20-40 min, więc częstsze odświeżanie nic nie daje, a przy wywoływaniu co sekundę koszt O(historia) na krok byłby zabójczy).
 
 # ==========================================
@@ -51,6 +51,12 @@ AUTOTEST_MIN_RESPONSE_FOR_STAB_C = 1.0         # Zanim sprawdzamy stabilizację,
 AUTOTEST_SMOOTH_WINDOW_S = 60                  # Krótkie okno uśredniania sygnału przed sprawdzeniem progu startowego [s] (odporność na szum czujników).
 AUTOTEST_STAB_WINDOW_S = 600                   # Okno, na którym regresją liniową liczymy tempo zmian [s] (zimą odpowiedź potrafi się ustabilizować przed limitem 40°C).
 AUTOTEST_STAB_RATE_THRESHOLD_C_PER_S = 0.0008  # Poniżej tego tempa zmian (z regresji) uznajemy odpowiedź za ustabilizowaną.
+
+# ==========================================
+# ESTYMATOR GRUBOŚCI ŚNIEGU (bilans masy z odczytów, BEZ dostępu do prawdziwej
+# grubości z modelu fizycznego) - patrz KontrolerBazowy._estymuj_grubosc_sniegu_mm.
+# ==========================================
+SNIEG_TOPNIENIE_MM_S_NA_C = 0.001  # Szacowane tempo topnienia pokrywy pod wpływem HRT>0°C [mm/s na °C].
 
 
 @njit(cache=True)
@@ -110,38 +116,6 @@ def _kalman_forecast_core(values, steps, process_variance, measurement_variance)
     return forecasts
 
 
-@njit(cache=True)
-def _bin_average_core(bin_ids, values):
-    """
-    Grupuje `values` po kolejnych RÓWNYCH `bin_ids` (tablica posortowana rosnąco,
-    bo próbki historii są uporządkowane w czasie) i liczy średnią w każdej grupie -
-    to jest dokładnie to, co robi pandas `resample(...).mean()`, tylko jednym
-    przebiegiem pętli w JIT-cie numba zamiast całej maszynerii DataFrame/GroupBy.
-    Zwraca (średnie, id_binu_każdej_grupy) - to drugie pozwala Pythonowi wykryć
-    lukę w danych (brakujący bin) i w takim (rzadkim) przypadku wypełnić ją
-    interpolacją (patrz KontrolerBazowy._forecast_attribute).
-    """
-    n = bin_ids.shape[0]
-    means = np.empty(n, dtype=np.float64)
-    group_bins = np.empty(n, dtype=np.int64)
-    count = 0
-    i = 0
-    while i < n:
-        current_bin = bin_ids[i]
-        s = 0.0
-        c = 0
-        j = i
-        while j < n and bin_ids[j] == current_bin:
-            s += values[j]
-            c += 1
-            j += 1
-        means[count] = s / c
-        group_bins[count] = current_bin
-        count += 1
-        i = j
-    return means[:count], group_bins[:count]
-
-
 @dataclass
 class RowData:
     """Struktura danych reprezentująca pojedynczy odczyt z czujników."""
@@ -169,7 +143,6 @@ class KontrolerBazowy:
 
     def __init__(self):
         self.row_data = RowData()
-        self.sensor_history = []  # Historia odczytów - atrybut instancji (nie klasy!), żeby nie był współdzielony między obiektami.
 
         # --- KROK STEROWANIA [s] - co ile sekund symulacja FAKTYCZNIE woła
         # metodę decyzyjną tego kontrolera (ustawiane z zewnątrz przez
@@ -206,13 +179,33 @@ class KontrolerBazowy:
         self._forecast_cache_crt = None
         self._forecast_cache_time_crt = None
 
-        # --- Bufory pomocnicze dla _forecast_attribute: bin_id (15-min) + wartość,
-        # liczone RAZ przy każdym dopisaniu odczytu (patrz _append_sensor_history),
-        # żeby _forecast_attribute nie musiała przy KAŻDYM cache-miss przeliczać
-        # bin_id i wyciągać atrybutów z obiektów RowData całej historii od nowa. ---
-        self._hist_bin_ids = []
-        self._hist_at = []
-        self._hist_crt = []
+        # --- BUFOR KROCZĄCEJ ŚREDNIEJ 15-MINUTOWEJ (AT/CRT) dla _forecast_attribute -
+        # ZAMIAST trzymania surowej historii odczytów (poprzedni projekt: rosnącej
+        # do 86400 próbek, czyli O(min(krok,86400)) pamięci na instancję kontrolera,
+        # ~18-21MB szacunkowo w rejestr_algorytmow.py), _append_sensor_history AGREGUJE na bieżąco: sumuje
+        # próbki w BIEŻĄCYM (jeszcze niezamkniętym) binie 15-minutowym
+        # (`_cur_sum_at/_cur_sum_crt/_cur_count`), a gdy napłynie próbka z NOWEGO
+        # bin_id, zamyka poprzedni bin (dzieli sumę przez licznik) i dopisuje jego
+        # średnią do `deque(maxlen=MAX_ROLLING_HISTORY)` - stały rozmiar O(36)
+        # NIEZALEŻNIE od długości symulacji, bo `_kalman_forecast_series` i tak
+        # nigdy nie używa więcej niż ostatnie MAX_ROLLING_HISTORY uśrednionych
+        # binów (patrz `resampled = full_means[-MAX_ROLLING_HISTORY:]` w
+        # _forecast_attribute - stare podejście liczyło to samo obcięcie na
+        # WIELE RAZY większej tablicy, więc wynik był identyczny, tylko drożej
+        # liczony). Matematycznie RÓWNOWAŻNE staremu podejściu (weryfikacja:
+        # bit-identyczna energia risk_function_pid przed/po, patrz AGENTS.md) -
+        # bo bin_id w tym symulatorze są zawsze ściśle kolejne (brak
+        # rzeczywistych "dziur" w próbkowaniu), więc interpolacja luk (np.interp
+        # niżej) jest no-opem w praktyce, a "ostatnie 36 binów" ze skróconego
+        # bufora to dokładnie te same biny, co "ostatnie 36 binów" wyliczone ze
+        # WSZYSTKICH binów od początku symulacji. ---
+        self._roll_bin_ids = deque(maxlen=MAX_ROLLING_HISTORY)
+        self._roll_means_at = deque(maxlen=MAX_ROLLING_HISTORY)
+        self._roll_means_crt = deque(maxlen=MAX_ROLLING_HISTORY)
+        self._cur_bin_id = None
+        self._cur_sum_at = 0.0
+        self._cur_sum_crt = 0.0
+        self._cur_count = 0
         self._hist_last_timestamp = None
 
         # --- "CYFROWY BLIŹNIAK" GRZAŁKI ZBUDOWANY Z WYNIKU AUTOTESTU (patrz
@@ -241,9 +234,61 @@ class KontrolerBazowy:
         # kroku, w którym się kończy) - patrz _autotest_startowy.
         self._ostatnia_moc_autotestu = 100.0
 
+        # --- ESTYMATOR GRUBOŚCI ŚNIEGU (patrz _estymuj_grubosc_sniegu_mm) - stan
+        # WŁASNEGO, samodzielnie liczonego bilansu masy śniegu kontrolera, NIE
+        # prawdziwej grubości z modelu fizycznego symulacji. ---
+        self._snieg_estymowany_mm = 0.0
+
     def _dodaj_flopy(self, n):
         """Dopisuje `n` do licznika RZECZYWIŚCIE wykonanych FLOPs (patrz __init__)."""
         self._flops_licznik += n
+
+    def _estymuj_grubosc_sniegu_mm(self, row_data):
+        """
+        Prosty bilans masy śniegu SZACOWANY WYŁĄCZNIE z tego, co widziałby
+        prawdziwy sterownik (odczyt intensywności opadu śniegu SNOW_snieg
+        [mm/s] + odczyt HRT) - BEZ dostępu do prawdziwej grubości śniegu z
+        modelu fizycznego (ice_model.snow_depth_m w symulacja_fizyczna.py,
+        przekazywanej do row_data jako 'SNIEG_GRUBOSC_MM' WYŁĄCZNIE do użytku
+        bezpiecznika/referencji symulacji - patrz snow_reference_mm w
+        symulacja_fizyczna.uruchom_kontroler - NIE do czytania przez logikę
+        decyzyjną kontrolera, stąd ta metoda zamiast bezpośredniego odczytu
+        tego pola).
+
+        CELOWE uproszczenie (nie replikuje bilansu energetycznego SnowClim,
+        analogicznie do przybliżenia ice_proxy_mm w
+        funkcja_nauka_kary_wspolna.py - jawnie udokumentowane, nie "ukryty"
+        skrót):
+          - PRZYROST = intensywność opadu śniegu (SNOW_snieg, mm/s) * krok
+            sterowania (self._dt_sterowania) - ile śniegu realnie spadło w
+            tym kroku.
+          - UBYTEK = przybliżone tempo topnienia proporcjonalne do HRT > 0°C
+            (prosty model typu "degree-day": SNIEG_TOPNIENIE_MM_S_NA_C *
+            max(HRT, 0) * krok sterowania) - im cieplejsza (ogrzana) szyna,
+            tym szybciej styka się z nią topniejący śnieg.
+
+        Stan (self._snieg_estymowany_mm) jest WŁASNOŚCIĄ INSTANCJI kontrolera
+        (nie symulacji) - każdy kontroler liczy WŁASNY, niezależny bilans z
+        WŁASNYCH odczytów, dokładnie tak jak robiłby to prawdziwy sterownik.
+
+        Ponieważ liczone WYŁĄCZNIE z pól row_data, te same pola przechodzą
+        przez ewentualny fault_injector (patrz
+        symulacja_fizyczna.uruchom_kontroler, wołany PRZED przekazaniem
+        odczytu kontrolerowi) - ten estymator jest więc automatycznie
+        podatny na te same awarie/szum co reszta logiki kontrolera (np. bias
+        albo szum na SNOW_snieg/HRT_temp_grzana w test_awarie_czujnikow.py
+        skazi też ten bilans), bez potrzeby osobnego mechanizmu zaszumiania.
+        """
+        snow_rate_mm_s = float(row_data.get('SNOW_snieg', 0.0))
+        hrt_temp = float(row_data.get('HRT_temp_grzana', 0.0))
+        dt = self._dt_sterowania
+
+        przyrost = snow_rate_mm_s * dt
+        ubytek = SNIEG_TOPNIENIE_MM_S_NA_C * max(hrt_temp, 0.0) * dt
+
+        self._snieg_estymowany_mm = max(0.0, self._snieg_estymowany_mm + przyrost - ubytek)
+        self._dodaj_flopy(4)  # 2 mnożenia (przyrost, ubytek) + odjęcie + max/clip.
+        return self._snieg_estymowany_mm
 
     # --- Funkcja pomocnicza filtru Kalmana: zamienia wejście na czystą serię liczbową ---
     @staticmethod
@@ -270,29 +315,34 @@ class KontrolerBazowy:
         return forecasts.tolist()  # Oddajemy listę wartości temperatury w przyszłości, krok po kroku.
 
     def _append_sensor_history(self, reading):
-        """Dopisuje odczyt do pamięci i utrzymuje ją w rozsądnym rozmiarze.
+        """Aktualizuje bufor kroczącej średniej 15-minutowej w STAŁEJ pamięci
+        O(MAX_ROLLING_HISTORY) - patrz uzasadnienie przy deklaracji buforów w
+        __init__. Zamyka bieżący bin (dzieli sumę przez licznik próbek) i
+        dopisuje jego średnią do bufora kroczącego dokładnie wtedy, gdy
+        napłynie próbka należąca już do NOWEGO binu 15-minutowego - to samo
+        grupowanie "po kolejnych równych bin_id", co dawne (usunięte)
+        _bin_average_core na surowej historii, tylko liczone PRZYROSTOWO."""
+        if reading.timestamp is None:
+            return
 
-        Bez tego ograniczenia lista rosłaby bez końca, a temperature_prediction
-        (wywoływana co sekundę np. przez risk_function) budowałaby DataFrame
-        z CAŁEJ historii przy każdym wywołaniu - koszt O(n) na krok, czyli O(n^2)
-        na całą symulację. Przycinanie w dużych porcjach (a nie co krok) sprawia,
-        że dopisywanie zostaje zamortyzowane O(1).
-        """
-        self.sensor_history.append(reading)
-        if len(self.sensor_history) > SENSOR_HISTORY_MAX_SAMPLES * 2:
-            self.sensor_history = self.sensor_history[-SENSOR_HISTORY_MAX_SAMPLES:]
+        bin_id = reading.timestamp.value // NANOS_PER_BIN
+        if self._cur_bin_id is None:
+            self._cur_bin_id = bin_id
+        elif bin_id != self._cur_bin_id:
+            self._roll_bin_ids.append(self._cur_bin_id)
+            self._roll_means_at.append(self._cur_sum_at / self._cur_count)
+            self._roll_means_crt.append(self._cur_sum_crt / self._cur_count)
+            self._dodaj_flopy(2)  # Dwa dzielenia (średnia AT, średnia CRT) przy zamknięciu binu.
+            self._cur_bin_id = bin_id
+            self._cur_sum_at = 0.0
+            self._cur_sum_crt = 0.0
+            self._cur_count = 0
 
-        # Aktualizacja buforów pomocniczych dla _forecast_attribute - patrz komentarz
-        # przy ich deklaracji w __init__ i przy _forecast_attribute.
-        if reading.timestamp is not None:
-            self._hist_bin_ids.append(reading.timestamp.value // NANOS_PER_BIN)
-            self._hist_at.append(reading.at_temp)
-            self._hist_crt.append(reading.crt_temp)
-            self._hist_last_timestamp = reading.timestamp
-            if len(self._hist_bin_ids) > SENSOR_HISTORY_MAX_SAMPLES * 2:
-                self._hist_bin_ids = self._hist_bin_ids[-SENSOR_HISTORY_MAX_SAMPLES:]
-                self._hist_at = self._hist_at[-SENSOR_HISTORY_MAX_SAMPLES:]
-                self._hist_crt = self._hist_crt[-SENSOR_HISTORY_MAX_SAMPLES:]
+        self._cur_sum_at += reading.at_temp
+        self._cur_sum_crt += reading.crt_temp
+        self._cur_count += 1
+        self._hist_last_timestamp = reading.timestamp
+        self._dodaj_flopy(2)  # Dwa sumowania (AT, CRT) do bieżącego binu.
 
     def _forecast_attribute(self, attribute_name, cache_key):
         """
@@ -306,20 +356,16 @@ class KontrolerBazowy:
         Każdy atrybut ma WŁASNY cache (cache_key), żeby prognoza AT i prognoza CRT
         się nie nadpisywały.
 
-        Resampling do siatki 15-minutowej: profil pokazał, że budowanie historii od
-        zera z obiektów RowData (DataFrame/getattr na każdym elemencie) przy KAŻDYM
-        cache-miss było dominującym kosztem symulacji dla risk_function/
-        risk_function_pid. Zamiast tego _append_sensor_history na bieżąco (O(1) na
-        krok) utrzymuje gotowe bufory bin_id + wartość (self._hist_bin_ids/_at/_crt),
-        więc tutaj wystarczy jeden szybki numpy.array() na liście zwykłych
-        int/float (nie obiektów) i jeden przebieg _bin_average_core (JIT numba) -
-        dokładnie to, co dawałoby pandas `resample(...).mean()`, tylko bez całej
-        maszynerii DataFrame/GroupBy. Ewentualne luki (brakujący bin - realny
-        dropout czujnika, czego ten symulator nigdy nie generuje) wypełnia
-        np.interp po indeksie binu - dla siatki o stałym kroku (900 s) to dokładnie
-        to samo co pandas `.interpolate(method='time')` (odstępy czasowe między
-        binami są identyczne, więc interpolacja "po czasie" i "po pozycji" dają
-        ten sam wynik).
+        Resampling do siatki 15-minutowej: `_append_sensor_history` utrzymuje już
+        gotowy bufor KROCZĄCEJ średniej (`self._roll_bin_ids/_roll_means_at/_crt`,
+        rozmiar co najwyżej MAX_ROLLING_HISTORY, patrz uzasadnienie przy
+        deklaracji w __init__) zamiast surowej historii odczytów - tutaj
+        wystarczy doczytać ten mały bufor + domknąć BIEŻĄCY (jeszcze
+        niezamknięty) bin jego dotychczasową średnią. Ewentualne luki
+        (brakujący bin - realny dropout czujnika, czego ten symulator nigdy
+        nie generuje) wypełnia np.interp po indeksie binu - dla siatki o
+        stałym kroku (900 s) to dokładnie to samo co pandas
+        `.interpolate(method='time')`.
         """
         array = [0, 0, 0, 0, 0, 0, 0, 0]
         cache_value_attr = f'_forecast_cache_{cache_key}'
@@ -332,22 +378,25 @@ class KontrolerBazowy:
                 and (latest_timestamp - cached_time).total_seconds() < TEMP_FORECAST_REFRESH_S):
             return cached_value
 
-        if len(self._hist_bin_ids) < 2:  # Bez minimum dwóch punktów nie da się ustawić trendu.
+        roll_means = self._roll_means_at if attribute_name == 'at_temp' else self._roll_means_crt
+        bin_ids = list(self._roll_bin_ids)
+        means = list(roll_means)
+        if self._cur_count > 0:
+            cur_sum = self._cur_sum_at if attribute_name == 'at_temp' else self._cur_sum_crt
+            bin_ids.append(self._cur_bin_id)
+            means.append(cur_sum / self._cur_count)
+            self._dodaj_flopy(1)  # Średnia bieżącego (niezamkniętego) binu.
+
+        if len(bin_ids) < 2:  # Bez minimum dwóch binów nie da się ustawić trendu.
             return array  # Zwracamy domyślną tablicę zer, tak jak w oryginalnym interfejsie.
 
-        hist_values = self._hist_at if attribute_name == 'at_temp' else self._hist_crt
-        bin_ids = np.array(self._hist_bin_ids, dtype=np.int64)
-        vals_arr = np.array(hist_values, dtype=np.float64)
-
-        bin_means, bin_group_ids = _bin_average_core(bin_ids, vals_arr)
-        # ~3 FLOPs/próbka surowej historii (sumowanie w grupie + porównanie bin_id).
-        self._dodaj_flopy(len(bin_ids) * 3)
-        if len(bin_means) < 2:
-            return array
+        bin_group_ids = np.array(bin_ids, dtype=np.int64)
+        bin_means = np.array(means, dtype=np.float64)
 
         full_bins = np.arange(bin_group_ids[0], bin_group_ids[-1] + 1)
         full_means = np.interp(full_bins, bin_group_ids, bin_means)
-        # ~2 FLOPs/bin interpolowany (np.interp - wyszukanie przedziału + interpolacja liniowa).
+        # ~2 FLOPs/bin interpolowany (np.interp - wyszukanie przedziału + interpolacja liniowa) -
+        # co najwyżej MAX_ROLLING_HISTORY+1 binów teraz, nie cała historia od początku symulacji.
         self._dodaj_flopy(len(full_bins) * 2)
         if len(full_means) < 2:
             return array

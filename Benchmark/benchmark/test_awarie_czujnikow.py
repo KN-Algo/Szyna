@@ -201,7 +201,8 @@ def main():
     if wyniki:
         df = pd.DataFrame(wyniki)
         kolumny = ['algorytm', 'scenariusz_awarii', 'energia_kwh', 'przelaczenia', 'max_snieg_mm',
-                   'max_lod_mm', 'max_hrt', 'min_hrt', 'srednia_moc_pct', 'flops_rzeczywiste']
+                   'max_lod_mm', 'max_hrt', 'min_hrt', 'srednia_moc_pct', 'flops_rzeczywiste',
+                   'iae', 'ise', 'itae']
         kolumny = [k for k in kolumny if k in df.columns]
         df = df[kolumny]
         sciezka_csv = os.path.join(FOLDER_WYNIKOW, "AWARIE_ZBIORCZY.csv")

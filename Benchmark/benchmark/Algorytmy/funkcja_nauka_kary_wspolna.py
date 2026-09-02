@@ -115,7 +115,12 @@ class KontrolerNaukaKaryBazowy(KontrolerNormyCiaglaBazowy):
         """
         timestamp = row_data['Timestamp']
         hrt_temp = float(row_data['HRT_temp_grzana'])
-        snow_depth_mm = float(row_data.get('SNIEG_GRUBOSC_MM', 0.0))
+        # Grubość śniegu NIE czytana z row_data['SNIEG_GRUBOSC_MM'] (prawdziwa
+        # wartość z modelu fizycznego, dostępna tylko bezpiecznikowi symulacji)
+        # - liczona samodzielnie bilansem masy z odczytów, dokładnie jak
+        # robiłby to prawdziwy sterownik (patrz
+        # rdzen_kontrolera.KontrolerBazowy._estymuj_grubosc_sniegu_mm).
+        snow_depth_mm = self._estymuj_grubosc_sniegu_mm(row_data)
         # Lód nie jest osobnym polem row_data (symulacja liczy je wewnętrznie w
         # SnowClimPhysicalModel i zwraca dopiero w historii/statystykach, nie
         # per-krok kontrolerowi) - jako proxy do kary NA BIEŻĄCO (nie wynik

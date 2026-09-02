@@ -61,19 +61,21 @@
 # zmierzone profilerem - traktuj jako rząd wielkości, nie dokładną liczbę cykli:
 #   'zlozonosc_czasowa'      - notacja O() na krok symulacji (1 wywołanie metody
 #                    decyzyjnej = 1 symulowana sekunda). Kontrolery dziedziczące
-#                    KontrolerBazowy dopisują odczyt do sensor_history co krok
-#                    (O(1) amortyzowane dzięki przycinaniu przy
-#                    SENSOR_HISTORY_MAX_SAMPLES), ale te z prognozą Kalmana
-#                    (_forecast_attribute) mają dodatkowo skok co
-#                    TEMP_FORECAST_REFRESH_S=300 kroków, gdy przelicza się
-#                    prognozę na PEŁNEJ zebranej historii (do 43200 próbek) - a
-#                    te z cyfrowym bliźniakiem (_prognoza_zanikania_ciepla)
-#                    dodatkowy skok co 300 kroków o rozmiarze
-#                    HORIZON_STEPS*STEP_SECONDS=7200 kroków symulacji modelu w
-#                    przód. Autotest startowy (adaptacyjne) to JEDNORAZOWY koszt
-#                    O(czas trwania autotestu, do 14400 kroków) - nie wliczony
-#                    do poniższych FLOPs/krok (te opisują stan USTALONY, PO
-#                    autotescie).
+#                    KontrolerBazowy aktualizują bufor kroczącej średniej
+#                    15-minutowej co krok (O(1) - patrz
+#                    rdzen_kontrolera.KontrolerBazowy._append_sensor_history,
+#                    zmienione 2026-09-02 z surowej historii na bufor stałego
+#                    rozmiaru), a te z prognozą Kalmana (_forecast_attribute)
+#                    mają dodatkowo skok co TEMP_FORECAST_REFRESH_S=300 kroków,
+#                    gdy przelicza się prognozę - ale TERAZ na co najwyżej
+#                    MAX_ROLLING_HISTORY=36 uśrednionych binach (nie na całej
+#                    zebranej historii jak poprzednio) - a te z cyfrowym
+#                    bliźniakiem (_prognoza_zanikania_ciepla) dodatkowy skok co
+#                    300 kroków o rozmiarze HORIZON_STEPS*STEP_SECONDS=7200
+#                    kroków symulacji modelu w przód. Autotest startowy
+#                    (adaptacyjne) to JEDNORAZOWY koszt O(czas trwania
+#                    autotestu, do 14400 kroków) - nie wliczony do poniższych
+#                    FLOPs/krok (te opisują stan USTALONY, PO autotescie).
 #   'flops_na_krok'          - przybliżona ŚREDNIA liczba operacji zmiennoprzecinkowych
 #                    NA KROK (uwzględniająca amortyzację powyższych skoków) -
 #                    wyłącznie logika DECYZYJNA algorytmu, bez współdzielonej
@@ -83,11 +85,21 @@
 #                    (minuty/godziny) wynika z narzutu interpretera
 #                    Pythona/pandas na krok, NIE z limitu przepustowości FLOPs
 #                    procesora (to zadanie jest memory/interpreter-bound, nie
-#                    compute-bound).
+#                    compute-bound). UWAGA: wartości poniżej NIE zostały jeszcze
+#                    przeliczone po zmianie z surowej historii na bufor
+#                    kroczący (2026-09-02) - realny koszt spadł (mniej pracy w
+#                    _forecast_attribute), ale stare szacunki wciąż są bezpieczną
+#                    (zawyżoną) górną granicą; ufaj kolumnie "FLOPs (zmierzone)"
+#                    w Excelu, nie tym stałym.
 #   'zlozonosc_pamieciowa'   - notacja O() pamięci stanu instancji kontrolera
-#                    względem liczby dotychczasowych kroków symulacji.
-#   'pamiec_przyblizona_mb'  - przybliżony rozmiar stanu w stanie USTALONYM (po
-#                    wypełnieniu/przycięciu buforów historii) w MB.
+#                    względem liczby dotychczasowych kroków symulacji. Od
+#                    2026-09-02: kontrolery dziedziczące KontrolerBazowy mają
+#                    O(1) (STAŁY bufor kroczący MAX_ROLLING_HISTORY=36 binów,
+#                    NIE rosnący z długością symulacji) - poprzednio
+#                    O(min(krok, 86400)) surowej historii odczytów. Patrz
+#                    notatki/algorytmy/*.md i AGENTS.md po uzasadnienie.
+#   'pamiec_przyblizona_mb'  - przybliżony rozmiar stanu w stanie USTALONYM w MB
+#                    (zaktualizowane po zmianie na bufor kroczący).
 
 ALGORYTMY = {
     'compute_control': {
@@ -98,6 +110,21 @@ ALGORYTMY = {
         'bezpiecznik': False,
         'typ': 'Histereza',
         'cel': 'Progi normy LET-1',
+        'adaptacyjny': False,
+        'zlozonosc_czasowa': 'O(1) na krok (amortyzowane)',
+        'flops_na_krok': 45,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) - pamięć czujników',
+        'pamiec_przyblizona_mb': 18.0,
+    },
+    'compute_control_gorski': {
+        'modul': 'histereza_let1_gorski',
+        'klasa': 'KontrolerHisterezaLET1Gorski',
+        'metoda': 'compute_control',
+        'opis': 'Wariant compute_control dla rejonów górskich (LET-1 pkt 2.4.18.7) - próg wyłączenia HRT '
+                'przy opadach podniesiony z +7°C do +10°C (bardzo intensywne opady śniegu) - histereza_let1_gorski.py.',
+        'bezpiecznik': False,
+        'typ': 'Histereza',
+        'cel': 'Progi normy LET-1 (rejon górski, pkt 2.4.18.7)',
         'adaptacyjny': False,
         'zlozonosc_czasowa': 'O(1) na krok (amortyzowane)',
         'flops_na_krok': 45,
@@ -145,6 +172,22 @@ ALGORYTMY = {
         'flops_na_krok': 450,
         'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu',
         'pamiec_przyblizona_mb': 21.0,
+    },
+    'risk_function_pid_auto': {
+        'modul': 'funkcja_ryzyka_pid_auto_strojenie',
+        'klasa': 'KontrolerRyzykaPIDAutoStrojenie',
+        'metoda': 'risk_function_pid_auto',
+        'opis': 'Jak risk_function_pid, plus AUTOMATYCZNE strojenie progów setpointu (hrt_on_precip, '
+                'at_low_freeze, hrt_on_dry, kara za śnieg) metodą "perturb-and-observe" co 7 dni - patrz '
+                'notatki/propozycja_auto_strojenie.md i funkcja_ryzyka_pid_auto_strojenie.py.',
+        'bezpiecznik': True,
+        'typ': 'PID (PI, SIMC, auto-strojenie progów)',
+        'cel': 'Funkcja ryzyka (Kalman) + progi strojone automatycznie',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) amortyzowane, jak risk_function_pid + skok co OKRES_STROJENIA_S=7 dni (tani, kilka porównań/przypisań)',
+        'flops_na_krok': 460,
+        'zlozonosc_pamieciowa': 'O(1) (bufor kroczący) + bufory autotestu/modelu + log strojenia (rośnie ~1 wpis/7 dni)',
+        'pamiec_przyblizona_mb': 3.0,
     },
     'norma_pid': {
         'modul': 'funkcja_pid_normy',

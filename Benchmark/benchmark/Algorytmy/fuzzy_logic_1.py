@@ -26,4 +26,7 @@ class KontrolerFuzzy1:
         blad_T = self.T_ZADANA - hrt
         wynik = wnioskowanie_fl_podstawowe(blad_T, hrt, jest_snieg, jest_deszcz)
         self._flops_licznik += 40  # Silnik FL1 (4 funkcje przynależności + 6 reguł Sugeno).
-        return klamra_fl1(wynik)
+        # Diagnostyka (do IAE/ISE/ITAE) - cel jest STAŁY (T_ZADANA), a silnik dąży
+        # do niego caly czas (brak stanu wył./zał.), więc need_heat=True zawsze.
+        diagnostics = {'target_temperature': self.T_ZADANA, 'need_heat': True}
+        return klamra_fl1(wynik), diagnostics

@@ -59,8 +59,10 @@ NAZWY_MIAST = {
 NAZWY_ALGORYTMOW = {
     'algorytm_z_normy': 'Automat z normy (bazowy)',
     'compute_control': 'Histereza LET-1',
+    'compute_control_gorski': 'Histereza LET-1 (rejon górski)',
     'risk_function': 'Funkcja ryzyka (binarna)',
     'risk_function_pid': 'Funkcja ryzyka (PID)',
+    'risk_function_pid_auto': 'Funkcja ryzyka (PID, auto-strojenie)',
     'norma_pid': 'PID z normą',
     'fuzzy_logic_1': 'Fuzzy Logic 1 (ciągły)',
     'fuzzy_logic_2': 'Fuzzy Logic 2 (binarny)',
@@ -155,17 +157,32 @@ def main():
     # ==========================================================================
     ws_dane = wb.active
     ws_dane.title = 'Dane'
+    # IAE/ISE/ITAE (patrz symulacja_fizyczna.uruchom_kontroler) - mierzą jak
+    # dobrze RZECZYWISTA HRT nadąża za temperaturą zadaną (target_temperature)
+    # wyliczaną przez kontroler, scałkowane po czasie przez okresy, w których
+    # kontroler faktycznie chciał grzać (need_heat=True). Puste dla algorytmów
+    # bez jawnego, ciągłego celu (compute_control*, algorytm_z_normy,
+    # fuzzy_logic_*) - te sterują progami/regułami wprost, bez pośredniego
+    # "celu" do porównania.
+    ma_iae = 'iae' in df.columns
     naglowki_dane = ['Lokalizacja', 'Interwał', 'Rok', 'Algorytm', 'Energia (kWh)',
-                      'Przełączenia', 'Max śnieg (mm)', 'Max HRT (°C)', 'FLOPs (zmierzone)']
+                      'Przełączenia', 'Max śnieg (mm)', 'Max HRT (°C)', 'FLOPs (zmierzone)',
+                      'IAE (°C·s)', 'ISE (°C²·s)', 'ITAE (°C·s²)']
     ustaw_naglowek(ws_dane, 1, naglowki_dane)
 
     ma_flopy = 'flops_rzeczywiste' in df.columns
     for i, wiersz in enumerate(df.itertuples(index=False), start=2):
         flopy = getattr(wiersz, 'flops_rzeczywiste', None) if ma_flopy else None
+        iae = getattr(wiersz, 'iae', None) if ma_iae else None
+        ise = getattr(wiersz, 'ise', None) if ma_iae else None
+        itae = getattr(wiersz, 'itae', None) if ma_iae else None
         wartosci = [wiersz.Lokalizacja, wiersz.Interwal, wiersz.Rok, wiersz.Algorytm,
                     round(wiersz.energia_kwh, 2), int(wiersz.przelaczenia),
                     round(wiersz.max_snieg_mm, 2), round(wiersz.max_hrt, 2),
-                    int(flopy) if pd.notna(flopy) else None]
+                    int(flopy) if pd.notna(flopy) else None,
+                    round(iae, 1) if pd.notna(iae) else None,
+                    round(ise, 1) if pd.notna(ise) else None,
+                    round(itae, 1) if pd.notna(itae) else None]
         for j, wartosc in enumerate(wartosci, start=1):
             komorka = ws_dane.cell(row=i, column=j, value=wartosc)
             komorka.font = FONT_ZWYKLY
@@ -177,13 +194,13 @@ def main():
 
     ostatni_wiersz_dane = len(df) + 1
     ws_dane.freeze_panes = 'A2'
-    ws_dane.auto_filter.ref = f'A1:I{ostatni_wiersz_dane}'
+    ws_dane.auto_filter.ref = f'A1:L{ostatni_wiersz_dane}'
 
     # Podświetlenie wierszy z podejrzanym przegrzaniem (Max HRT > 35°C).
     fill_anomalia = PatternFill('solid', fgColor=KOLOR_ANOMALIA)
     font_anomalia = Font(name=FONT_NAZWA, size=10, color=KOLOR_ANOMALIA_TEKST)
     ws_dane.conditional_formatting.add(
-        f'A2:I{ostatni_wiersz_dane}',
+        f'A2:L{ostatni_wiersz_dane}',
         FormulaRule(formula=['$H2>35'], fill=fill_anomalia, font=font_anomalia),
     )
 
@@ -197,7 +214,9 @@ def main():
                      'Średnie przełączenia', 'Średni max śnieg (mm)', 'Średni max HRT (°C)',
                      'Liczba przypadków przegrzania (HRT>35°C)',
                      'Przełączenia/dzień (śr.)', 'Przewidywane przełączenia/rok',
-                     f'% budżetu życiowego ({BUDZET_PRZELACZEN_CALKOWITY:,}) zużyty/rok'.replace(',', ' ')]
+                     f'% budżetu życiowego ({BUDZET_PRZELACZEN_CALKOWITY:,}) zużyty/rok'.replace(',', ' '),
+                     'Max śnieg GLOBALNIE (mm, najgorszy przypadek ze wszystkich pogód)',
+                     'Średnie IAE (°C·s)', 'Średnie ISE (°C²·s)', 'Średnie ITAE (°C·s²)']
     ustaw_naglowek(ws_alg, 1, naglowki_alg)
 
     # Budżet przełączeń dotyczy WYŁĄCZNIE algorytmów o wyjściu binarnym/dyskretnym
@@ -235,6 +254,18 @@ def main():
         ws_alg.cell(row=i, column=8, value=(
             f'=COUNTIFS(Dane!$D$2:$D${ostatni_wiersz_dane}, $A{i}, Dane!$H$2:$H${ostatni_wiersz_dane}, ">35")'
         ))
+        ws_alg.cell(row=i, column=12, value=(
+            f'=_xlfn.MAXIFS(Dane!$G$2:$G${ostatni_wiersz_dane}, Dane!$D$2:$D${ostatni_wiersz_dane}, $A{i})'
+        ))
+        ws_alg.cell(row=i, column=13, value=(
+            f'=AVERAGEIF(Dane!$D$2:$D${ostatni_wiersz_dane}, $A{i}, Dane!$J$2:$J${ostatni_wiersz_dane})'
+        ))
+        ws_alg.cell(row=i, column=14, value=(
+            f'=AVERAGEIF(Dane!$D$2:$D${ostatni_wiersz_dane}, $A{i}, Dane!$K$2:$K${ostatni_wiersz_dane})'
+        ))
+        ws_alg.cell(row=i, column=15, value=(
+            f'=AVERAGEIF(Dane!$D$2:$D${ostatni_wiersz_dane}, $A{i}, Dane!$L$2:$L${ostatni_wiersz_dane})'
+        ))
 
         if dyskretnosc_per_alg.get(klucz) and sr_przelaczen_per_alg is not None and sr_dni_per_alg is not None:
             sr_dni = sr_dni_per_alg.get(klucz)
@@ -247,15 +278,16 @@ def main():
                 ws_alg.cell(row=i, column=10, value=przel_rok)
                 ws_alg.cell(row=i, column=11, value=proc_budzetu_rok)
 
-        FORMATY_KOLUMN_ALG = {8: '0', 10: '0', 11: '0.00"%"'}
-        for kol in range(2, 12):
+        FORMATY_KOLUMN_ALG = {8: '0', 10: '0', 11: '0.00"%"', 13: '0.0', 14: '0.0', 15: '0.0'}
+        for kol in range(2, 16):
             komorka = ws_alg.cell(row=i, column=kol)
             komorka.font = FONT_ZWYKLY
             komorka.number_format = FORMATY_KOLUMN_ALG.get(kol, '0.00')
             komorka.border = OBRAMOWANIE_CIENKIE
 
     ostatni_wiersz_alg = len(lista_algorytmow) + 1
-    for litera, odwrocona in [('B', True), ('E', True), ('F', True), ('G', True), ('H', True)]:
+    for litera, odwrocona in [('B', True), ('E', True), ('F', True), ('G', True), ('H', True),
+                               ('L', True), ('M', True), ('N', True), ('O', True)]:
         if odwrocona:
             skala = ColorScaleRule(start_type='min', start_color='63BE7B',
                                     end_type='max', end_color='F8696B')
@@ -457,7 +489,12 @@ def main():
     # pokazuje ZMIANY w czasie). Pomijana bez błędu, jeśli żadne takie pliki
     # nie istnieją (np. przegląd nie obejmował algorytmów nauka_kary_*).
     # ==========================================================================
-    pliki_uczenia = sorted(glob.glob(os.path.join(FOLDER_WYNIKOW, '*_uczenie.csv')))
+    _wszystkie_pliki_uczenia = sorted(glob.glob(os.path.join(FOLDER_WYNIKOW, '*_uczenie.csv')))
+    # Tylko rodzina nauka_kary_* (schemat: czynnik_nauczony + 3 liczniki kar) - patrz
+    # osobny blok niżej dla risk_function_pid_auto (schemat: koszt + strojone progi,
+    # NIEKOMPATYBILNY z kolumnami poniżej - własna zakładka "Strojenie_progow_ryzyka").
+    pliki_uczenia = [p for p in _wszystkie_pliki_uczenia
+                      if any(os.path.basename(p).endswith(f'_{k}_uczenie.csv') for k in KLUCZE_UCZENIA_KARY)]
     if pliki_uczenia:
         ramki_uczenia = []
         for plik in pliki_uczenia:
@@ -534,6 +571,76 @@ def main():
 
         if chart.series:
             ws_ucz.add_chart(chart, f'A{wiersz_startowy_wykresu}')
+
+    # ==========================================================================
+    # ZAKŁADKA "Strojenie_progow_ryzyka" - krzywa AUTOMATYCZNEGO STROJENIA
+    # (risk_function_pid_auto, patrz funkcja_ryzyka_pid_auto_strojenie.py) -
+    # SCHEMAT INNY niż "Uczenie_adaptacyjne" wyżej (koszt + 4 strojone progi,
+    # nie czynnik_nauczony + 3 kary), stąd osobna zakładka zamiast mieszania
+    # w jednej tabeli. Pomijana bez błędu, jeśli algorytm nie był w przeglądzie.
+    # ==========================================================================
+    pliki_strojenia = [p for p in _wszystkie_pliki_uczenia
+                        if os.path.basename(p).endswith('_risk_function_pid_auto_uczenie.csv')]
+    if pliki_strojenia:
+        ramki_strojenia = []
+        for plik in pliki_strojenia:
+            ramka = pd.read_csv(plik)
+            ramka['timestamp'] = pd.to_datetime(ramka['timestamp'])
+            ramki_strojenia.append(ramka)
+        df_strojenie = pd.concat(ramki_strojenia, ignore_index=True)
+        df_strojenie.sort_values(['lokalizacja', 'timestamp'], inplace=True)
+        df_strojenie['nr_aktualizacji'] = df_strojenie.groupby('lokalizacja').cumcount() + 1
+
+        ws_str = wb.create_sheet('Strojenie_progow_ryzyka')
+        ws_str.cell(row=1, column=1, value=(
+            'Jeden wiersz = JEDNA aktualizacja progów risk_function_pid_auto (domyślnie raz na 7 dni '
+            'symulowanego czasu, "perturb-and-observe" - patrz notatki/propozycja_auto_strojenie.md). '
+            '"Koszt" = całka mocy (%·h) + kara za przekroczone progi śniegu/lodu/przegrzania (h x waga) - '
+            'gdy koszt ROŚNIE względem poprzedniego okresu, kierunek zmiany KAŻDEGO progu się odwraca.'
+        ))
+        ws_str.cell(row=1, column=1).font = Font(name=FONT_NAZWA, italic=True, size=9, color='555555')
+        ws_str.merge_cells(start_row=1, start_column=1, end_row=1, end_column=8)
+
+        WIERSZ_NAGLOWKA_STR = 2
+        naglowki_str = ['Lokalizacja', 'Nr aktualizacji', 'Data', 'Koszt', 'Moc-całka (%·h)', 'Kary (h)',
+                         'hrt_on_precip', 'at_low_freeze', 'hrt_on_dry', 'risk_snow_penalty_per_mm_c']
+        ustaw_naglowek(ws_str, WIERSZ_NAGLOWKA_STR, naglowki_str)
+
+        for i, wiersz in enumerate(df_strojenie.itertuples(index=False), start=WIERSZ_NAGLOWKA_STR + 1):
+            wartosci = [wiersz.lokalizacja, int(wiersz.nr_aktualizacji), wiersz.timestamp.strftime('%Y-%m-%d'),
+                        round(wiersz.koszt, 2), round(wiersz.moc_calka_pct_h, 2), round(wiersz.kary_h, 3),
+                        round(wiersz.hrt_on_precip, 3), round(wiersz.at_low_freeze, 3),
+                        round(wiersz.hrt_on_dry, 3), round(wiersz.risk_snow_penalty_per_mm_c, 4)]
+            for j, wartosc in enumerate(wartosci, start=1):
+                komorka = ws_str.cell(row=i, column=j, value=wartosc)
+                komorka.font = FONT_ZWYKLY
+                komorka.border = OBRAMOWANIE_CIENKIE
+
+        ostatni_wiersz_str = len(df_strojenie) + WIERSZ_NAGLOWKA_STR
+        ws_str.freeze_panes = f'A{WIERSZ_NAGLOWKA_STR + 1}'
+        ws_str.auto_filter.ref = f'A{WIERSZ_NAGLOWKA_STR}:J{ostatni_wiersz_str}'
+        autoszerokosc(ws_str)
+
+        pierwsza_lokalizacja_str = df_strojenie['lokalizacja'].iloc[0]
+        podzbior_str = df_strojenie[df_strojenie['lokalizacja'] == pierwsza_lokalizacja_str]
+        wiersz_wykresu_str = ostatni_wiersz_str + 3
+        ws_str.cell(row=wiersz_wykresu_str - 1, column=1,
+                    value=f'Podgląd krzywej kosztu strojenia - {pierwsza_lokalizacja_str}').font = FONT_POGRUBIONY
+        ws_str.cell(row=wiersz_wykresu_str, column=12, value='Koszt').font = FONT_POGRUBIONY
+        for k, wartosc in enumerate(podzbior_str['koszt'].tolist(), start=1):
+            ws_str.cell(row=wiersz_wykresu_str + k, column=12, value=round(float(wartosc), 2))
+
+        chart_str = LineChart()
+        chart_str.title = f'Krzywa kosztu auto-strojenia - {pierwsza_lokalizacja_str}'
+        chart_str.x_axis.title = 'Nr aktualizacji (x 7 dni)'
+        chart_str.y_axis.title = 'Koszt (%·h-ekwiwalent)'
+        chart_str.width = 24
+        chart_str.height = 12
+        dane_serii_str = Reference(ws_str, min_col=12, min_row=wiersz_wykresu_str,
+                                    max_row=wiersz_wykresu_str + len(podzbior_str))
+        chart_str.add_data(dane_serii_str, titles_from_data=True)
+        if chart_str.series:
+            ws_str.add_chart(chart_str, f'A{wiersz_wykresu_str}')
 
     # ==========================================================================
     # ZAKŁADKA "Wnioski" - tekst z realnie policzonymi liczbami (nie formuły)

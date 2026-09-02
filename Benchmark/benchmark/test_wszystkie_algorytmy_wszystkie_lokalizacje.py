@@ -41,11 +41,12 @@ NAZWA_ALGORYTMU_NORMY = 'algorytm_z_normy'
 # liczone są ZAWSZE z pełnej rozdzielczości 1s wewnątrz uruchom_kontroler - to
 # obniża TYLKO rozmiar zapisywanych przebiegów, nie dokładność żadnej statystyki).
 # Przy 17 algorytmach x 43 lokalizacjach pełna rozdzielczość 1s dawałaby ~55-60GB
-# (zmierzone: ~80MB na plik x 731 plików) - 60s (1 min) to ~60x mniej miejsca,
-# a dla 7-dniowego okna nadal >10 tys. punktów na wykres/algorytm - więcej niż
-# potrzeba do czytelnego przebiegu włącz/wyłącz. Ustaw na 1, żeby wrócić do
-# pełnej rozdzielczości (jak w pozostałych dwóch skryptach testowych).
-ZAPISZ_CO_N_SEKUND = 60
+# (zmierzone: ~80MB na plik x 731 plików) - 600s (10 min, zwiększone z 60s na
+# życzenie użytkownika 2026-09-02 - patrz ten sam parametr w
+# test_wszystkie_rownolegle.py) to jeszcze mniej miejsca, a dla pełnego zakresu
+# dat nadal setki punktów na wykres/algorytm - więcej niż potrzeba do czytelnego
+# przebiegu włącz/wyłącz. Ustaw na 1, żeby wrócić do pełnej rozdzielczości.
+ZAPISZ_CO_N_SEKUND = 600
 
 # None = bierzemy CAŁY zakres każdego pliku (pełne sezony XI-III, nie tylko
 # najzimniejszy wycinek) - patrz symulacja_fizyczna.wczytaj_pogode_1s(zakres_dat=...).

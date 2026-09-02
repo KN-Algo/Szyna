@@ -141,5 +141,12 @@ class KontrolerHisterezaLET1(KontrolerBazowy):
         self._append_sensor_history(self.row_data)  # Zapisujemy aktualny odczyt do historii
         self._dodaj_flopy(45)  # calculate_risk_level (10 progów) + histereza + limit przełączeń.
 
+        # --- DIAGNOSTYKA (do IAE/ISE/ITAE - patrz symulacja_fizyczna.uruchom_kontroler):
+        # ten algorytm nie ma ciągłego setpointu, ale gdy grzeje, IMPLICITE dąży do
+        # progu WYŁĄCZENIA aktywnej gałęzi (opady/suchy mróz) - to ten próg kończy
+        # dany epizod grzania, więc traktujemy go jako "cel" na czas need_heat=True. ---
+        target_temperature = self.hrt_off_precip if has_precipitation else self.hrt_off_dry
+        diagnostics = {'target_temperature': target_temperature, 'need_heat': self.heating_on}
+
         # 5. BINARNE WYJŚCIE STERUJĄCE: Zwraca wyłącznie 0.0% (wyłączony) lub 100.0% (pełna moc)
-        return 100.0 if self.heating_on else 0.0
+        return (100.0 if self.heating_on else 0.0), diagnostics

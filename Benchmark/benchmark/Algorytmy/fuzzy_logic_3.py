@@ -32,4 +32,7 @@ class KontrolerFuzzy3:
             self._flops_licznik += 40  # Silnik FL1 liczony RAZ na początku cyklu PWM (60s), nie co krok.
 
         self._flops_licznik += 2  # Krok PWM (porównanie licznika cyklu).
-        return self.pwm.krok()
+        # Diagnostyka (do IAE/ISE/ITAE) - cel STAŁY (T_ZADANA), silnik dąży do niego
+        # cały czas, więc need_heat=True zawsze (patrz fuzzy_logic_1.py).
+        diagnostics = {'target_temperature': self.T_ZADANA, 'need_heat': True}
+        return self.pwm.krok(), diagnostics
