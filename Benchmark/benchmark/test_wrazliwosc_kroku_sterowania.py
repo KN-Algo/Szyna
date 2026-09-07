@@ -15,15 +15,14 @@
 #
 # Sterowanie (zmienne środowiskowe):
 #   SZYNA_ALGORYTMY_KROK   - lista algorytmów do sprawdzenia (przecinki) -
-#                             domyślnie 3 zwycięzcy wstępnego rankingu (2 lokalizacje,
-#                             okno 30 dni, patrz AGENTS.md 2026-09-02): fuzzy_ryzyko_2v2_opad
-#                             (#1 ogólnie, rodzina "funkcja ryzyka"), fuzzy_normy_2v2
-#                             (#8, najlepszy z rodziny "progi normy" - inne stroalne
-#                             stałe niż #1), nauka_kary_opad (najlepszy z rodziny
-#                             "uczenie z kar" - jeszcze inne stroalne stałe) - CELOWO
-#                             zróżnicowani (nie literalne top-3 wg samej energii, bo
-#                             te są prawie identyczne warianty fuzzy_ryzyko_* strojące
-#                             TE SAME stałe RISK_* - nieinformatywne dla grid-search).
+#                             domyślnie WSZYSTKIE algorytmy z rejestru (zmienione
+#                             2026-09-03, na życzenie użytkownika - "przeliczyć dla
+#                             wszystkich algorytmów, nie tylko wybranych, żeby całość
+#                             była bardziej miarodajna"). Wcześniej domyślnie tylko 3
+#                             zwycięzcy wstępnego rankingu + 3 warianty MPC - to
+#                             ograniczenie ZNIESIONE, ale nadal dostępne przez ręczne
+#                             ustawienie tej zmiennej, gdyby zależało na szybszym,
+#                             węższym przebiegu.
 #   SZYNA_KROKI_S           - lista kroków [s] do przetestowania (przecinki),
 #                             domyślnie "1,10,60,300,600"
 #   SZYNA_LOKALIZACJE       - jak w test_wszystkie_rownolegle.py (domyślnie wszystkie)
@@ -53,8 +52,11 @@ FOLDER_WYNIKOW = os.environ.get(
     'SZYNA_FOLDER_WYNIKOW_KROK', os.path.join(BASE_DIR, "wyniki", "wrazliwosc_kroku"))
 os.makedirs(FOLDER_WYNIKOW, exist_ok=True)
 
-_alg_env = os.environ.get('SZYNA_ALGORYTMY_KROK', 'fuzzy_ryzyko_2v2_opad,fuzzy_normy_2v2,nauka_kary_opad')
-ALGORYTMY_KROK = [a.strip() for a in _alg_env.split(',') if a.strip()]
+sys.path.insert(0, os.path.join(BASE_DIR, 'Algorytmy'))
+from rejestr_algorytmow import ALGORYTMY  # noqa: E402
+
+_alg_env = os.environ.get('SZYNA_ALGORYTMY_KROK')
+ALGORYTMY_KROK = [a.strip() for a in _alg_env.split(',') if a.strip()] if _alg_env else list(ALGORYTMY)
 
 _kroki_env = os.environ.get('SZYNA_KROKI_S', '1,10,60,300,600')
 KROKI_S = [float(k.strip()) for k in _kroki_env.split(',') if k.strip()]

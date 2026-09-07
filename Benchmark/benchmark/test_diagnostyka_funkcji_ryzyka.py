@@ -20,7 +20,7 @@
 # dostaje własną zakładkę do porównania.
 #
 # Sterowanie (zmienne środowiskowe):
-#   SZYNA_LOKALIZACJA_DIAG   - lokalizacja (domyślnie abisko_60min_2024)
+#   SZYNA_LOKALIZACJA_DIAG   - lokalizacja (domyślnie abisko_60min_2025)
 #   SZYNA_ALGORYTMY_DIAG     - lista algorytmów, przecinki (domyślnie "risk_function_pid")
 #   SZYNA_MAX_DNI_DIAG       - okno dni, najzimniejszy wycinek (domyślnie 14)
 #   SZYNA_KROK_S             - krok symulacji [s] (domyślnie 10.0)
@@ -42,7 +42,7 @@ FOLDER_WYNIKOW = os.environ.get(
     'SZYNA_FOLDER_WYNIKOW_DIAG', os.path.join(BASE_DIR, "wyniki", "diagnostyka_funkcji_ryzyka"))
 os.makedirs(FOLDER_WYNIKOW, exist_ok=True)
 
-LOKALIZACJA = os.environ.get('SZYNA_LOKALIZACJA_DIAG', 'abisko_60min_2024')
+LOKALIZACJA = os.environ.get('SZYNA_LOKALIZACJA_DIAG', 'abisko_60min_2025')
 _alg_env = os.environ.get('SZYNA_ALGORYTMY_DIAG', 'risk_function_pid')
 ALGORYTMY_DIAG = [a.strip() for a in _alg_env.split(',') if a.strip()]
 MAX_DNI = int(os.environ.get('SZYNA_MAX_DNI_DIAG', '14'))

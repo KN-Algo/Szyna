@@ -2,12 +2,14 @@
 # slurm_szum_wielu_czujnikow.sh
 #
 # Pełny test odporności na szum pomiarowy (test_szum_wielu_czujnikow.py) -
-# 10 losowych lokalizacji x wszystkie 29 algorytmów x 29 scenariuszy szumu
-# (7 czujników x 4 poziomy + brak_awarii) = 8410 zadań.
+# 10 losowych lokalizacji (z puli 44, seed stały) x wszystkie 35 algorytmy
+# (rejestr urósł z 29 do 35 - dodane 3 warianty MPC + 2 algorytmy inspirowane
+# literaturą, 2026-09-03) x 29 scenariuszy szumu (7 czujników x 4 poziomy +
+# brak_awarii) = 10150 zadań.
 #
 # KOSZT: zmierzone lokalnie (smoke test, 2 lokalizacje x 2 algorytmy, okno
 # 2-dniowe) - ~0.19 core-min/zadanie. Przy domyślnym oknie 10-dniowym (5x) to
-# ekstrapoluje się do ~0.97 core-min/zadanie, razem ~8410 zadań = ~135 core-h
+# ekstrapoluje się do ~0.97 core-min/zadanie, razem ~10150 zadań = ~164 core-h
 # szacunkowo. --cpus-per-task=48 / --time=6:00:00 = 288 core-h - bezpieczny
 # zapas ponad szacunek.
 #

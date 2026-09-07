@@ -13,11 +13,11 @@
 #
 # Kolejność:
 #   1) slurm_smoke_test.sh                  (~30 min, weryfikacja środowiska)
-#   2) slurm_pelny_przeglad.sh               (pełny przegląd, 43 lok. x wszystkie algorytmy - główny wynik, ~576 core-h)
-#   3) slurm_wrazliwosc_transmitancji.sh     (wrażliwość transmitancji, 43 lok. x 8 scenariuszy, do ~4608 core-h)
-#   4) slurm_wrazliwosc_2lok.sh              (pogłębiona wrażliwość + szum, 2 lok. x 14 scenariuszy x szum, ~60-90 core-h)
-#   5) slurm_krok_sterowania.sh              (wrażliwość na krok sterowania, 43 lok. x 3 algorytmy x 5 kroków, ~14 core-h)
-#   6) slurm_szum_wielu_czujnikow.sh         (szum wielu czujników, 10 lok. x 29 scenariuszy x wszystkie algorytmy, ~135 core-h)
+#   2) slurm_pelny_przeglad.sh               (pełny przegląd, 44 lok. x wszystkie 35 algorytmy - główny wynik, ~576 core-h budżetu)
+#   3) slurm_wrazliwosc_transmitancji.sh     (wrażliwość transmitancji, 44 lok. x 8 scenariuszy, do ~4608 core-h budżetu)
+#   4) slurm_wrazliwosc_2lok.sh              (pogłębiona wrażliwość + szum, 2 lok. x 14 scenariuszy x szum, ~68-102 core-h)
+#   5) slurm_krok_sterowania.sh              (wrażliwość na krok sterowania, 44 lok. x WSZYSTKIE 35 algorytmy x 5 kroków, ~157 core-h)
+#   6) slurm_szum_wielu_czujnikow.sh         (szum wielu czujników, 10 lok. x 29 scenariuszy x wszystkie 35 algorytmy, ~155 core-h)
 #   7) slurm_test_awarie.sh                  (odporność na awarie czujników, ~32 core-h)
 #
 # WAŻNE: ten plik uruchamiasz BEZPOŚREDNIO (`bash`), NIE przez `sbatch` - to

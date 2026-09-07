@@ -1,6 +1,6 @@
 # Notatki per algorytm
 
-Jeden plik `.md` na każdy z 28 algorytmów zarejestrowanych w `Algorytmy/rejestr_algorytmow.py`
+Jeden plik `.md` na każdy z 32 algorytmów zarejestrowanych w `Algorytmy/rejestr_algorytmow.py`
 (`ALGORYTMY` dict) — opisuje jak dany algorytm liczy setpoint/moc, czym różni się od najbliższego
 "rodzeństwa", jakie ma własne stałe, i szacunek FLOPs/krok (pełny mechanizm liczenia FLOPs:
 [../FLOPs.md](../FLOPs.md)).
@@ -43,3 +43,11 @@ plik/klasa/metoda/typ/cel/adaptacyjny/bezpiecznik, sekcja "Jak działa", sekcja 
 - [nauka_kary_opad](nauka_kary_opad.md) — + prognoza opadu
 - [nauka_kary_blizniak](nauka_kary_blizniak.md) — + cyfrowy bliźniak (adaptacyjny, autotest)
 - [nauka_kary_ryzyko](nauka_kary_ryzyko.md) — łączy wszystkie trzy prognozy (najbardziej złożony, adaptacyjny)
+
+## MPC (optymalizacja CAŁEJ trajektorii na horyzoncie, nie tylko pojedynczego kroku)
+
+- [mpc_liniowy](mpc_liniowy.md) — QP na 8-blokowym horyzoncie 2h, zaburzenie (CRT) STAŁE (wariant kontrolny bez prognozy pogody)
+- [mpc_prognoza_pogody](mpc_prognoza_pogody.md) — jak wyżej, zaburzenie z prognozy Kalmana + cel z prognozą opadu (pełna wersja)
+- [mpc_miekkie_ograniczenia](mpc_miekkie_ograniczenia.md) — jak mpc_prognoza_pogody, ale bariera wykładnicza zamiast kary progowej za zbliżanie się do progu bezpieczeństwa
+- [histereza_pamiec_rosy](histereza_pamiec_rosy.md) — histereza + punkt rosy (polityka P_mem, Chiaradonna i in. 2021) - jedyny algorytm czytający PUNKT_ROSY_C, z pamięcią na wypadek zawieszonego odczytu
+- [predykcja_wygladzanie_prosta](predykcja_wygladzanie_prosta.md) — regulator na prognozie HRT wygładzaniem Holta (polityka P_pre, Chiaradonna i in. 2021), margines bezpieczeństwa samokalibrujący się z własnego błędu prognozy

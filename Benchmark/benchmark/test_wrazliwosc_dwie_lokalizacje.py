@@ -2,13 +2,27 @@
 #
 # Pogłębiona analiza wrażliwości na niepewność modelu obiektu (transmitancja
 # GRZANIA, SOPDT K/T1/T2/L) NA DWÓCH reprezentatywnych, skrajnych lokalizacjach:
-#   - abisko_60min_2024   - najwięcej opadu/śniegu ze wszystkich 43 lokalizacji
-#                             (patrz analiza w rozmowie: 1425 mm śniegu/5 lat,
-#                             1.89 mm/dzień - zdecydowany lider)
-#   - ojmiakon_60min_2024 - najzimniejsza lokalizacja (śr. -35.6°C, min -59.1°C)
+#   - abisko_60min_2025   - najwięcej opadu/śniegu z PIERWOTNEGO zestawu 10
+#                             lokalizacji (patrz analiza w rozmowie: 1425 mm
+#                             śniegu/5 lat, 1.89 mm/dzień - zdecydowany lider
+#                             wtedy). UWAGA (2026-09-03, po rozszerzeniu do 44
+#                             lokalizacji i przejściu na sezon 2025/2026): wg
+#                             nowych danych `mount_hotham_60min_2025` ma teraz
+#                             WIĘCEJ śniegu (385.4mm vs Abisko - poza top-5) -
+#                             ten skrypt WCIĄŻ używa Abisko/Ojmiakon (spójność
+#                             z resztą już napisanej dokumentacji/notatek), ale
+#                             to świadomy kompromis do rozważenia, NIE
+#                             automatycznie zaktualizowany wybór "obiektywnie
+#                             najbardziej ekstremalnej" lokalizacji.
+#   - ojmiakon_60min_2025 - najzimniejsza lokalizacja (śr. -35.6°C, min -59.1°C
+#                             w oryginalnych danych; potwierdzone WCIĄŻ #1 pod
+#                             względem średniej temp. również w nowym zestawie
+#                             44 lokalizacji, -33.9°C śr./-58.1°C min w sezonie
+#                             2025/2026 - jedyna z dwóch, która nie wymagała
+#                             korekty).
 #
 # W ODRÓŻNIENIU od slurm_wrazliwosc_transmitancji.sh (8 scenariuszy, PEŁNY
-# przegląd 43 lokalizacje x wszystkie algorytmy, jeden scenariusz na
+# przegląd 44 lokalizacje x wszystkie algorytmy, jeden scenariusz na
 # uruchomienie skryptu przez SZYNA_PERTURB_*) - ten skrypt liczy CAŁĄ MACIERZ
 # scenariuszy w JEDNYM uruchomieniu, na tylko 2 lokalizacjach, i DODATKOWO:
 #
@@ -37,7 +51,7 @@
 # Checkpoint/resume jak w test_wszystkie_rownolegle.py (SZYNA_WZNOW=1 domyślnie).
 #
 # Sterowanie (zmienne środowiskowe):
-#   SZYNA_LOKALIZACJE_WRAZ      - lista lokalizacji, domyślnie "abisko_60min_2024,ojmiakon_60min_2024"
+#   SZYNA_LOKALIZACJE_WRAZ      - lista lokalizacji, domyślnie "abisko_60min_2025,ojmiakon_60min_2025"
 #   SZYNA_MAX_DNI_WRAZ          - okno dni na lokalizację (domyślnie 45, najzimniejszy wycinek)
 #   SZYNA_KROK_S                - krok symulacji/sterowania [s] (domyślnie 10.0, jak reszta projektu)
 #   SZYNA_LICZBA_WATKOW         - liczba procesów (jak reszta projektu)
@@ -64,7 +78,7 @@ os.makedirs(FOLDER_WYNIKOW, exist_ok=True)
 
 _lok_env = os.environ.get('SZYNA_LOKALIZACJE_WRAZ')
 LOKALIZACJE = [l.strip() for l in _lok_env.split(',')] if _lok_env else \
-    ['abisko_60min_2024', 'ojmiakon_60min_2024']
+    ['abisko_60min_2025', 'ojmiakon_60min_2025']
 
 MAX_DNI = int(os.environ.get('SZYNA_MAX_DNI_WRAZ', '45'))
 KROK_SYMULACJI_S = float(os.environ.get('SZYNA_KROK_S', '10.0'))

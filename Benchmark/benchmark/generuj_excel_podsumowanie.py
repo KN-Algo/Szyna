@@ -47,11 +47,34 @@ SCIEZKA_XLSX = os.path.join(FOLDER_WYNIKOW, "Podsumowanie_wynikow.xlsx")
 # środowiskowa, żeby oba skrypty zawsze zgadzały się co do tej liczby).
 BUDZET_PRZELACZEN_CALKOWITY = int(os.environ.get('SZYNA_BUDZET_PRZELACZEN', '500000'))
 
+# UWAGA: przy każdym dodaniu nowej lokalizacji (nowy plik w Pogoda_pomiary_15_minut/)
+# trzeba dopisać tu jej poprawną nazwę wyświetlaną (z diakrytykami/dywizami, gdzie
+# trzeba) - inaczej parsuj_lokalizacje() cicho spadnie na fallback
+# klucz.replace('_',' ').title(), który: 1) gubi diakrytyki (np. "Wladywostok"
+# zamiast "Władywostok"), 2) źle kapitalizuje partykuły typu "de" w nazwach
+# wieloczłonowych (np. "San Carlos De Bariloche" zamiast "...de Bariloche").
 NAZWY_MIAST = {
+    # --- Pierwotne 10 lokalizacji ---
     'abisko': 'Abisko', 'fairbanks': 'Fairbanks', 'jakuck': 'Jakuck',
     'krakow': 'Kraków', 'ojmiakon': 'Ojmiakon', 'old_crow': 'Old Crow',
     'oslo': 'Oslo', 'puszcza_bialowieska': 'Puszcza Białowieska',
     'suwalki': 'Suwałki', 'wroclaw': 'Wrocław',
+    # --- 34 nowe lokalizacje (2026-09-03) ---
+    'ushuaia': 'Ushuaia', 'san_carlos_de_bariloche': 'San Carlos de Bariloche',
+    'punta_arenas': 'Punta Arenas', 'coyhaique': 'Coyhaique',
+    'harbin': 'Harbin', 'mohe': 'Mohe', 'urumczi': 'Urumczi', 'lhasa': 'Lhasa',
+    'norylsk': 'Norylsk', 'wladywostok': 'Władywostok', 'murmansk': 'Murmańsk',
+    'rovaniemi': 'Rovaniemi', 'sodankyla': 'Sodankylä',
+    'kiruna': 'Kiruna', 'ostersund': 'Östersund',
+    'tromso': 'Tromsø', 'roros': 'Røros',
+    'reykjavik': 'Reykjavík', 'akureyri': 'Akureyri',
+    'banff': 'Banff', 'yellowknife': 'Yellowknife', 'quebec_city': 'Quebec City',
+    'anchorage': 'Anchorage', 'duluth': 'Duluth',
+    'garmisch_partenkirchen': 'Garmisch-Partenkirchen', 'oberstdorf': 'Oberstdorf',
+    'aviemore': 'Aviemore', 'braemar': 'Braemar',
+    'sapporo': 'Sapporo', 'nagano': 'Nagano',
+    'manali': 'Manali', 'gulmarg': 'Gulmarg',
+    'sutherland': 'Sutherland', 'mount_hotham': 'Mount Hotham',
 }
 
 # Kolejność = norma jako baza odniesienia, potem pozostałe algorytmy w kolejności
@@ -87,6 +110,11 @@ NAZWY_ALGORYTMOW = {
     'nauka_kary_opad': 'Uczenie z kar + prognoza opadu',
     'nauka_kary_blizniak': 'Uczenie z kar + cyfrowy bliźniak',
     'nauka_kary_ryzyko': 'Uczenie z kar + pełne ryzyko',
+    'mpc_liniowy': 'MPC (bez prognozy pogody)',
+    'mpc_prognoza_pogody': 'MPC (z prognozą pogody)',
+    'mpc_miekkie_ograniczenia': 'MPC (bariera wykładnicza)',
+    'histereza_pamiec_rosy': 'Histereza + punkt rosy (pamięć)',
+    'predykcja_wygladzanie_prosta': 'Predykcja (wygładzanie Holta)',
 }
 ALGORYTM_BAZOWY = 'Automat z normy (bazowy)'
 
@@ -165,10 +193,45 @@ def main():
     # fuzzy_logic_*) - te sterują progami/regułami wprost, bez pośredniego
     # "celu" do porównania.
     ma_iae = 'iae' in df.columns
+    # 'kara_bezpieczenstwa'/'epizody_ponizej_floor'/'min_hrt' (patrz
+    # symulacja_fizyczna.uruchom_kontroler i notatki/kara_bezpieczenstwa.md) -
+    # W ODRÓŻNIENIU od IAE/ISE/ITAE (jak DOBRZE algorytm trzyma się WŁASNEGO
+    # celu) to miara WYNIKU fizycznego wobec BEZWZGLĘDNYCH progów
+    # bezpieczeństwa normy, ta sama dla WSZYSTKICH algorytmów niezależnie od
+    # tego, jaki cel sobie wyznaczają.
+    ma_kara = 'kara_bezpieczenstwa' in df.columns
+    ma_min_hrt = 'min_hrt' in df.columns
     naglowki_dane = ['Lokalizacja', 'Interwał', 'Rok', 'Algorytm', 'Energia (kWh)',
                       'Przełączenia', 'Max śnieg (mm)', 'Max HRT (°C)', 'FLOPs (zmierzone)',
-                      'IAE (°C·s)', 'ISE (°C²·s)', 'ITAE (°C·s²)']
+                      'IAE (°C·s)', 'ISE (°C²·s)', 'ITAE (°C·s²)',
+                      'Min HRT (°C)', 'Kara bezpieczeństwa (°C·s)', 'Epizody HRT<-10°C',
+                      'IAE % vs norma LET-1', 'ISE % vs norma LET-1', 'ITAE % vs norma LET-1',
+                      'Kara bezp. % vs norma LET-1']
     ustaw_naglowek(ws_dane, 1, naglowki_dane)
+
+    # --- % WZGLĘDEM NORMY LET-1 (algorytm_z_normy = ALGORYTM_BAZOWY) - na życzenie
+    # użytkownika: "niech on będzie naszym punktem odniesienia do całości". Osobny
+    # baseline DLA KAŻDEJ (Lokalizacja, Interwał, Rok) - nie jeden globalny numer -
+    # bo IAE/kara zależą silnie od konkretnej pogody tego przebiegu, a nie tylko
+    # algorytmu. ---
+    baseline_lookup = {}
+    if ma_iae or ma_kara:
+        baza_df = df[df['Algorytm'] == ALGORYTM_BAZOWY].set_index(['Lokalizacja', 'Interwal', 'Rok'])
+        for klucz, wiersz_bazowy in baza_df.iterrows():
+            baseline_lookup[klucz] = {
+                'iae': wiersz_bazowy.get('iae'),
+                'ise': wiersz_bazowy.get('ise'),
+                'itae': wiersz_bazowy.get('itae'),
+                'kara_bezpieczenstwa': wiersz_bazowy.get('kara_bezpieczenstwa'),
+            }
+
+    def _pct_vs_norma(wartosc, klucz_baseline, pole):
+        if pd.isna(wartosc):
+            return None
+        baza = baseline_lookup.get(klucz_baseline, {}).get(pole)
+        if baza is None or pd.isna(baza) or baza == 0:
+            return None
+        return (float(wartosc) - float(baza)) / float(baza) * 100.0
 
     ma_flopy = 'flops_rzeczywiste' in df.columns
     for i, wiersz in enumerate(df.itertuples(index=False), start=2):
@@ -176,13 +239,28 @@ def main():
         iae = getattr(wiersz, 'iae', None) if ma_iae else None
         ise = getattr(wiersz, 'ise', None) if ma_iae else None
         itae = getattr(wiersz, 'itae', None) if ma_iae else None
+        min_hrt = getattr(wiersz, 'min_hrt', None) if ma_min_hrt else None
+        kara = getattr(wiersz, 'kara_bezpieczenstwa', None) if ma_kara else None
+        epizody_floor = getattr(wiersz, 'epizody_ponizej_floor', None) if ma_kara else None
+        klucz_baseline = (wiersz.Lokalizacja, wiersz.Interwal, wiersz.Rok)
+        iae_pct = _pct_vs_norma(iae, klucz_baseline, 'iae')
+        ise_pct = _pct_vs_norma(ise, klucz_baseline, 'ise')
+        itae_pct = _pct_vs_norma(itae, klucz_baseline, 'itae')
+        kara_pct = _pct_vs_norma(kara, klucz_baseline, 'kara_bezpieczenstwa')
         wartosci = [wiersz.Lokalizacja, wiersz.Interwal, wiersz.Rok, wiersz.Algorytm,
                     round(wiersz.energia_kwh, 2), int(wiersz.przelaczenia),
                     round(wiersz.max_snieg_mm, 2), round(wiersz.max_hrt, 2),
                     int(flopy) if pd.notna(flopy) else None,
                     round(iae, 1) if pd.notna(iae) else None,
                     round(ise, 1) if pd.notna(ise) else None,
-                    round(itae, 1) if pd.notna(itae) else None]
+                    round(itae, 1) if pd.notna(itae) else None,
+                    round(min_hrt, 2) if pd.notna(min_hrt) else None,
+                    round(kara, 1) if pd.notna(kara) else None,
+                    int(epizody_floor) if pd.notna(epizody_floor) else None,
+                    round(iae_pct, 1) if iae_pct is not None else None,
+                    round(ise_pct, 1) if ise_pct is not None else None,
+                    round(itae_pct, 1) if itae_pct is not None else None,
+                    round(kara_pct, 1) if kara_pct is not None else None]
         for j, wartosc in enumerate(wartosci, start=1):
             komorka = ws_dane.cell(row=i, column=j, value=wartosc)
             komorka.font = FONT_ZWYKLY
@@ -191,18 +269,32 @@ def main():
                 komorka.alignment = WYROWNANIE_SRODEK
             if j == 9:
                 komorka.number_format = '0.00E+00'
+            if j in (16, 17, 18, 19):
+                komorka.number_format = '+0.0"%";-0.0"%"'
 
     ostatni_wiersz_dane = len(df) + 1
     ws_dane.freeze_panes = 'A2'
-    ws_dane.auto_filter.ref = f'A1:L{ostatni_wiersz_dane}'
+    ws_dane.auto_filter.ref = f'A1:S{ostatni_wiersz_dane}'
+    if ma_iae or ma_kara:
+        for litera in ('P', 'Q', 'R', 'S'):
+            skala = ColorScaleRule(start_type='min', start_color='63BE7B', mid_type='num', mid_value=0, mid_color='FFEB84',
+                                    end_type='max', end_color='F8696B')
+            ws_dane.conditional_formatting.add(f'{litera}2:{litera}{ostatni_wiersz_dane}', skala)
 
-    # Podświetlenie wierszy z podejrzanym przegrzaniem (Max HRT > 35°C).
+    # Podświetlenie wierszy z podejrzanym przegrzaniem (Max HRT > 35°C) LUB
+    # jakąkolwiek karą bezpieczeństwa > 0 (śnieg/marznący deszcz/mróz poza
+    # bezpiecznym zakresem - patrz notatki/kara_bezpieczenstwa.md).
     fill_anomalia = PatternFill('solid', fgColor=KOLOR_ANOMALIA)
     font_anomalia = Font(name=FONT_NAZWA, size=10, color=KOLOR_ANOMALIA_TEKST)
     ws_dane.conditional_formatting.add(
-        f'A2:L{ostatni_wiersz_dane}',
+        f'A2:S{ostatni_wiersz_dane}',
         FormulaRule(formula=['$H2>35'], fill=fill_anomalia, font=font_anomalia),
     )
+    if ma_kara:
+        ws_dane.conditional_formatting.add(
+            f'A2:S{ostatni_wiersz_dane}',
+            FormulaRule(formula=['$N2>0'], fill=fill_anomalia, font=font_anomalia),
+        )
 
     autoszerokosc(ws_dane)
 
@@ -216,7 +308,9 @@ def main():
                      'Przełączenia/dzień (śr.)', 'Przewidywane przełączenia/rok',
                      f'% budżetu życiowego ({BUDZET_PRZELACZEN_CALKOWITY:,}) zużyty/rok'.replace(',', ' '),
                      'Max śnieg GLOBALNIE (mm, najgorszy przypadek ze wszystkich pogód)',
-                     'Średnie IAE (°C·s)', 'Średnie ISE (°C²·s)', 'Średnie ITAE (°C·s²)']
+                     'Średnie IAE (°C·s)', 'Średnie ISE (°C²·s)', 'Średnie ITAE (°C·s²)',
+                     'Średnia kara bezpieczeństwa (°C·s)', 'Min HRT GLOBALNIE (°C, najgorszy przypadek)',
+                     'Lokalizacja najgorszego przypadku (min HRT)', 'Suma epizodów HRT<-10°C']
     ustaw_naglowek(ws_alg, 1, naglowki_alg)
 
     # Budżet przełączeń dotyczy WYŁĄCZNIE algorytmów o wyjściu binarnym/dyskretnym
@@ -266,6 +360,24 @@ def main():
         ws_alg.cell(row=i, column=15, value=(
             f'=AVERAGEIF(Dane!$D$2:$D${ostatni_wiersz_dane}, $A{i}, Dane!$L$2:$L${ostatni_wiersz_dane})'
         ))
+        # Kara bezpieczeństwa / min HRT / lokalizacja najgorszego przypadku / suma epizodów <-10°C -
+        # patrz notatki/kara_bezpieczenstwa.md. Kolumny Dane: M=Min HRT, N=Kara bezpieczeństwa, O=Epizody.
+        ws_alg.cell(row=i, column=16, value=(
+            f'=AVERAGEIF(Dane!$D$2:$D${ostatni_wiersz_dane}, $A{i}, Dane!$N$2:$N${ostatni_wiersz_dane})'
+        ))
+        ws_alg.cell(row=i, column=17, value=(
+            f'=_xlfn.MINIFS(Dane!$M$2:$M${ostatni_wiersz_dane}, Dane!$D$2:$D${ostatni_wiersz_dane}, $A{i})'
+        ))
+        # "Podwójny INDEX" zamiast formuły tablicowej (CSE) - działa jako zwykła formuła w Excelu,
+        # zwraca lokalizację z Dane!A odpowiadającą wierszowi, gdzie ZARÓWNO algorytm (D), JAK I
+        # min HRT (M) pasują do wartości z kolumny Q tego samego wiersza.
+        ws_alg.cell(row=i, column=18, value=(
+            f'=IFERROR(INDEX(Dane!$A$2:$A${ostatni_wiersz_dane}, MATCH(1, '
+            f'INDEX((Dane!$D$2:$D${ostatni_wiersz_dane}=$A{i})*(Dane!$M$2:$M${ostatni_wiersz_dane}=$Q{i}), 0), 0)), "")'
+        ))
+        ws_alg.cell(row=i, column=19, value=(
+            f'=SUMIF(Dane!$D$2:$D${ostatni_wiersz_dane}, $A{i}, Dane!$O$2:$O${ostatni_wiersz_dane})'
+        ))
 
         if dyskretnosc_per_alg.get(klucz) and sr_przelaczen_per_alg is not None and sr_dni_per_alg is not None:
             sr_dni = sr_dni_per_alg.get(klucz)
@@ -278,8 +390,12 @@ def main():
                 ws_alg.cell(row=i, column=10, value=przel_rok)
                 ws_alg.cell(row=i, column=11, value=proc_budzetu_rok)
 
-        FORMATY_KOLUMN_ALG = {8: '0', 10: '0', 11: '0.00"%"', 13: '0.0', 14: '0.0', 15: '0.0'}
-        for kol in range(2, 16):
+        FORMATY_KOLUMN_ALG = {8: '0', 10: '0', 11: '0.00"%"', 13: '0.0', 14: '0.0', 15: '0.0',
+                               16: '0.0', 17: '0.00', 19: '0'}
+        for kol in range(2, 20):
+            if kol == 18:
+                ws_alg.cell(row=i, column=kol).border = OBRAMOWANIE_CIENKIE
+                continue  # kolumna tekstowa (lokalizacja) - bez formatu liczbowego.
             komorka = ws_alg.cell(row=i, column=kol)
             komorka.font = FONT_ZWYKLY
             komorka.number_format = FORMATY_KOLUMN_ALG.get(kol, '0.00')
@@ -287,7 +403,8 @@ def main():
 
     ostatni_wiersz_alg = len(lista_algorytmow) + 1
     for litera, odwrocona in [('B', True), ('E', True), ('F', True), ('G', True), ('H', True),
-                               ('L', True), ('M', True), ('N', True), ('O', True)]:
+                               ('L', True), ('M', True), ('N', True), ('O', True),
+                               ('P', True), ('Q', False), ('S', True)]:
         if odwrocona:
             skala = ColorScaleRule(start_type='min', start_color='63BE7B',
                                     end_type='max', end_color='F8696B')
@@ -710,6 +827,34 @@ def main():
                  f'{agregaty.loc["Funkcja ryzyka (binarna)","energia_srednia"]:.1f} kWh średnio), ale biorąc pod')
     linie.append('   uwagę brak anomalii i dużo mniejsze zużycie mechaniczne przekaźnika, to ona jest')
     linie.append('   rekomendowanym wyborem do dalszego rozwoju/wdrożenia.')
+
+    if 'kara_bezpieczenstwa' in df.columns:
+        linie.append('')
+        linie.append('5) NARUSZENIA BEZPIECZEŃSTWA (patrz notatki/kara_bezpieczenstwa.md)')
+        naruszenia = df[df['kara_bezpieczenstwa'] > 0].copy()
+        agregaty_kara = df.groupby('Algorytm').agg(
+            kara_suma=('kara_bezpieczenstwa', 'sum'),
+            epizody_suma=('epizody_ponizej_floor', 'sum'),
+            min_hrt_globalnie=('min_hrt', 'min'),
+        ).reindex(lista_algorytmow)
+        linie.append(f'   Łącznie {len(naruszenia)} z {len(df)} wierszy danych ma niezerową karę '
+                     f'bezpieczeństwa (zalegający śnieg powyżej bezpiecznego progu / marznący deszcz przy '
+                     f'HRT wciąż < 2°C / HRT poniżej bezwzględnego floora -10°C):')
+        for alg in lista_algorytmow:
+            kara_s = agregaty_kara.loc[alg, 'kara_suma']
+            epizody_s = agregaty_kara.loc[alg, 'epizody_suma']
+            min_hrt_g = agregaty_kara.loc[alg, 'min_hrt_globalnie']
+            if pd.notna(kara_s) and pd.notna(min_hrt_g):
+                linie.append(f'   - {alg}: suma kary {kara_s:.0f} °C·s, '
+                             f'{int(epizody_s) if pd.notna(epizody_s) else 0} epizodów HRT<-10°C, '
+                             f'najzimniejszy zaobserwowany HRT={min_hrt_g:.1f}°C')
+            else:
+                linie.append(f'   - {alg}: brak danych')
+        if not naruszenia.empty:
+            linie.append('   Najgorsze pojedyncze przypadki (najwyższa kara bezpieczeństwa w danym przebiegu):')
+            for r in naruszenia.sort_values('kara_bezpieczenstwa', ascending=False).head(5).itertuples():
+                linie.append(f'   - {r.Lokalizacja} {r.Rok} ({r.Algorytm}): kara={r.kara_bezpieczenstwa:.0f} °C·s, '
+                             f'min HRT={r.min_hrt:.1f}°C, epizodów HRT<-10°C={int(r.epizody_ponizej_floor)}')
 
     for i, linia in enumerate(linie, start=1):
         komorka = ws_wn.cell(row=i, column=1, value=linia)

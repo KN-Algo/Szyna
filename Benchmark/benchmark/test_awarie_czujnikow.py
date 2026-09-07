@@ -16,7 +16,7 @@
 #
 # Uruchomienie: python test_awarie_czujnikow.py
 # Sterowanie (te same konwencje co test_wszystkie_rownolegle.py):
-#   SZYNA_LOKALIZACJA_AWARIE   - która lokalizacja (domyślnie abisko_60min_2021)
+#   SZYNA_LOKALIZACJA_AWARIE   - która lokalizacja (domyślnie abisko_60min_2025)
 #   SZYNA_MAX_DNI_AWARIE       - ile dni okna (domyślnie 10 - wystarczy, żeby
 #                                 awaria typu "rozłączenie" (w połowie okna)
 #                                 miała czas się objawić, a test zostaje szybki)
@@ -38,13 +38,23 @@ FOLDER_WYNIKOW = os.environ.get(
     'SZYNA_FOLDER_WYNIKOW_AWARIE', os.path.join(BASE_DIR, "wyniki", "awarie_czujnikow"))
 os.makedirs(FOLDER_WYNIKOW, exist_ok=True)
 
-LOKALIZACJA = os.environ.get('SZYNA_LOKALIZACJA_AWARIE', 'abisko_60min_2021')
+LOKALIZACJA = os.environ.get('SZYNA_LOKALIZACJA_AWARIE', 'abisko_60min_2025')
 MAX_DNI = int(os.environ.get('SZYNA_MAX_DNI_AWARIE', '10'))
 KROK_SYMULACJI_S = float(os.environ.get('SZYNA_KROK_S', '10.0'))
 MAX_SWITCHES_PER_DAY = 100
 
 _watkow_env = os.environ.get('SZYNA_LICZBA_WATKOW')
 LICZBA_WATKOW_NADPISANIE = int(_watkow_env) if _watkow_env else None
+
+# Filtr algorytmów (jak w test_wszystkie_rownolegle.py/test_szum_wielu_czujnikow.py) -
+# pozwala doliczyć TYLKO nowe/wybrane algorytmy zamiast przeliczać wszystkie 33 od nowa.
+_algorytmy_env = os.environ.get('SZYNA_ALGORYTMY')
+ALGORYTMY_FILTR = {a.strip() for a in _algorytmy_env.split(',') if a.strip()} if _algorytmy_env else None
+
+# Wznowienie/scalanie z istniejącym AWARIE_ZBIORCZY.csv (jak w pozostałych skryptach
+# test_*.py) - kluczowe przy doliczaniu TYLKO nowych algorytmów: bez tego, uruchomienie
+# z ALGORYTMY_FILTR nadpisałoby CSV samymi nowymi wierszami i ZGUBIŁO wyniki reszty.
+WZNAWIAJ_PRZERWANE = os.environ.get('SZYNA_WZNOW', '1') != '0'
 
 # --- PARAMETRY AWARII (patrz nagłówek pliku - uzgodnione z użytkownikiem jako
 # wystarczające na start; łatwo dołożyć kolejne czujniki/typy poniżej). ---
@@ -172,12 +182,31 @@ def main():
     from rejestr_algorytmow import ALGORYTMY
 
     nazwy_scenariuszy = list(zbuduj_scenariusze(1).keys())  # tylko nazwy - total_steps nieistotny na tym etapie
-    zadania = [(alg, scen) for alg in ALGORYTMY for scen in nazwy_scenariuszy]
-    print(f"Łącznie {len(zadania)} zadań ({len(ALGORYTMY)} algorytmów x {len(nazwy_scenariuszy)} scenariuszy awarii).\n")
+    algorytmy_do_testu = [a for a in ALGORYTMY if ALGORYTMY_FILTR is None or a in ALGORYTMY_FILTR]
+    if ALGORYTMY_FILTR is not None:
+        print(f"UWAGA: filtr algorytmów aktywny - {len(algorytmy_do_testu)}/{len(ALGORYTMY)} algorytmów.")
+    zadania = [(alg, scen) for alg in algorytmy_do_testu for scen in nazwy_scenariuszy]
+    liczba_zadan_ogolem = len(zadania)
+    print(f"Łącznie {len(zadania)} zadań ({len(algorytmy_do_testu)} algorytmów x {len(nazwy_scenariuszy)} scenariuszy awarii).\n")
 
     wyniki = []
+    sciezka_zbiorczy = os.path.join(FOLDER_WYNIKOW, "AWARIE_ZBIORCZY.csv")
+    if WZNAWIAJ_PRZERWANE and os.path.exists(sciezka_zbiorczy):
+        try:
+            df_poprzedni = pd.read_csv(sciezka_zbiorczy)
+            wyniki = df_poprzedni.to_dict('records')
+            gotowe = {(w['algorytm'], w['scenariusz_awarii']) for w in wyniki}
+            zadania = [z for z in zadania if z not in gotowe]
+            print(f"WZNOWIENIE: znaleziono {len(gotowe)} gotowych zadań z poprzedniego przebiegu - "
+                  f"liczą się tylko brakujące {len(zadania)}/{liczba_zadan_ogolem}.\n")
+        except Exception:
+            print(f"UWAGA: nie udało się wczytać {sciezka_zbiorczy} do wznowienia - liczę wszystko od zera.\n")
+            wyniki = []
+
     bledy = []
     t0 = time.time()
+    if not zadania:
+        print("Wszystkie zadania już policzone w poprzednim przebiegu - tylko odświeżam CSV/Excel.\n")
 
     with ProcessPoolExecutor(max_workers=liczba_watkow) as executor:
         futures = {executor.submit(przetworz_kombinacje, alg, scen): (alg, scen) for alg, scen in zadania}
@@ -196,13 +225,14 @@ def main():
                       f"energia={stats['energia_kwh']:.1f} kWh max_hrt={stats['max_hrt']:.1f}°C "
                       f"(upłynęło {elapsed_min:.1f} min)")
 
-    print(f"\nZakończono w {(time.time() - t0) / 60.0:.1f} min. Sukcesy: {len(wyniki)}/{len(zadania)}. Błędy: {len(bledy)}.")
+    print(f"\nZakończono w {(time.time() - t0) / 60.0:.1f} min. Sukcesy: {len(wyniki)}/{liczba_zadan_ogolem} "
+          f"(w tym {len(wyniki) - len(zadania) + len(bledy)} wznowionych z poprzedniego przebiegu). Błędy: {len(bledy)}.")
 
     if wyniki:
         df = pd.DataFrame(wyniki)
         kolumny = ['algorytm', 'scenariusz_awarii', 'energia_kwh', 'przelaczenia', 'max_snieg_mm',
                    'max_lod_mm', 'max_hrt', 'min_hrt', 'srednia_moc_pct', 'flops_rzeczywiste',
-                   'iae', 'ise', 'itae']
+                   'iae', 'ise', 'itae', 'kara_bezpieczenstwa', 'epizody_ponizej_floor']
         kolumny = [k for k in kolumny if k in df.columns]
         df = df[kolumny]
         sciezka_csv = os.path.join(FOLDER_WYNIKOW, "AWARIE_ZBIORCZY.csv")

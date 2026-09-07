@@ -9,9 +9,11 @@
 # KOSZT: zmierzone lokalnie (smoke test, 3-dniowe okno, mieszanka
 # algorytmów): ~0.15 core-min/zadanie. Przy oknie 45-dniowym (domyślne,
 # SZYNA_MAX_DNI_WRAZ) to ekstrapoluje się do ~2.25 core-min/zadanie, razem
-# ~1624 zadania (2 lokalizacje x 29 algorytmów x 14 scenariuszy x 2 warianty
-# szumu) = ~60-90 core-h szacunkowo. --cpus-per-task=48 / --time=4:00:00 =
-# 192 core-h - bezpieczny zapas ponad szacunek, NIE ślepe zgadywanie.
+# ~1960 zadań (2 lokalizacje x 35 algorytmy [rejestr urósł z 29 do 35 -
+# dodane 3 warianty MPC + 2 algorytmy inspirowane literaturą, 2026-09-03]
+# x 14 scenariuszy x 2 warianty szumu) = ~72-108 core-h szacunkowo.
+# --cpus-per-task=48 / --time=4:00:00 = 192 core-h - bezpieczny zapas ponad
+# szacunek, NIE ślepe zgadywanie.
 #
 # WAŻNE: zlecaj TYLKO przez `sbatch`, NIGDY przez `sh`/`bash` bezpośrednio.
 #

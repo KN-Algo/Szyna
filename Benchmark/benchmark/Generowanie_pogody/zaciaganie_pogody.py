@@ -26,27 +26,79 @@ import time
 import os
 
 # ---------------------------------------------------------------------------
-# 1. DEFINICJA STACJI (miasto vs głusza, 4 regiony)
-# ---------------------------------------------------------------------------
+# 1. DEFINICJA STACJI - pełna lista 44 lokalizacji użytkownika (2026-09-03),
+#    MINUS Wrocław (świadomie WYŁĄCZONY z tego skryptu - jego istniejący plik
+#    `wroclaw_15min_2024.csv` pochodzi z INNEGO źródła, natywnej rozdzielczości
+#    15-min z historical-forecast-api - patrz Generowanie_pogody/generator_pogody.py
+#    - i użytkownik wyraźnie poprosił, żeby ten konkretny plik ZOSTAŁ nietknięty,
+#    nie nadpisywany przez ten skrypt). Pozostałe 43 lokalizacje pobierane TĄ
+#    SAMĄ metodą (Open-Meteo /v1/archive, ERA5-Land, godzinowe) dla spójności
+#    metodologicznej między wszystkimi lokalizacjami (patrz nagłówek pliku).
+#
+#    Współrzędne = centrum miasta/miejscowości z listy użytkownika. ERA5-Land to
+#    reanaliza na siatce ~9-11km pokrywającej CAŁY ląd globu, więc każda z tych
+#    współrzędnych automatycznie dostaje dane z najbliższej komórki siatki - nie
+#    ma tu "białych plam" wymagających ręcznego szukania zastępczej stacji w
+#    okolicy (w odróżnieniu od sieci stacji naziemnych, gdzie takie dziury
+#    faktycznie by wystąpiły).
 STACJE = [
-    {"nazwa": "Krakow",            "region": "Polska",       "typ": "miasto", "lat": 50.0647,  "lon": 19.9450},
-    {"nazwa": "Puszcza_Bialowieska","region": "Polska",       "typ": "glusza", "lat": 52.7000,  "lon": 23.8500},
-    {"nazwa": "Oslo",              "region": "Skandynawia",  "typ": "miasto", "lat": 59.9139,  "lon": 10.7522},
-    {"nazwa": "Abisko",            "region": "Skandynawia",  "typ": "glusza", "lat": 68.3556,  "lon": 18.7877},
-    {"nazwa": "Fairbanks",         "region": "Ameryka_Pln",  "typ": "miasto", "lat": 64.8378,  "lon": -147.7164},
-    {"nazwa": "Old_Crow",          "region": "Ameryka_Pln",  "typ": "glusza", "lat": 67.5667,  "lon": -139.8333},
-    {"nazwa": "Jakuck",            "region": "Syberia",      "typ": "miasto", "lat": 62.0355,  "lon": 129.6755},
-    {"nazwa": "Ojmiakon",          "region": "Syberia",      "typ": "glusza", "lat": 63.4608,  "lon": 142.7858},
+    # --- Pierwotne 9 (bez Wrocławia) ---
+    {"nazwa": "Abisko",                     "region": "Szwecja",             "lat": 68.3556,  "lon": 18.7877},
+    {"nazwa": "Fairbanks",                  "region": "USA (Alaska)",        "lat": 64.8378,  "lon": -147.7164},
+    {"nazwa": "Jakuck",                     "region": "Rosja",               "lat": 62.0355,  "lon": 129.6755},
+    {"nazwa": "Krakow",                     "region": "Polska",              "lat": 50.0647,  "lon": 19.9450},
+    {"nazwa": "Ojmiakon",                   "region": "Rosja",               "lat": 63.4608,  "lon": 142.7858},
+    {"nazwa": "Old_Crow",                   "region": "Kanada",              "lat": 67.5667,  "lon": -139.8333},
+    {"nazwa": "Oslo",                       "region": "Norwegia",            "lat": 59.9139,  "lon": 10.7522},
+    {"nazwa": "Puszcza_Bialowieska",        "region": "Polska",              "lat": 52.7000,  "lon": 23.8500},
+    {"nazwa": "Suwalki",                    "region": "Polska",              "lat": 54.1004,  "lon": 22.9296},
+    # --- 34 nowe lokalizacje (2026-09-03) ---
+    {"nazwa": "Ushuaia",                    "region": "Argentyna",           "lat": -54.8019, "lon": -68.3030},
+    {"nazwa": "San_Carlos_de_Bariloche",    "region": "Argentyna",           "lat": -41.1335, "lon": -71.3103},
+    {"nazwa": "Punta_Arenas",               "region": "Chile",               "lat": -53.1638, "lon": -70.9171},
+    {"nazwa": "Coyhaique",                  "region": "Chile",               "lat": -45.5752, "lon": -72.0662},
+    {"nazwa": "Harbin",                     "region": "Chiny",               "lat": 45.8038,  "lon": 126.5349},
+    {"nazwa": "Mohe",                       "region": "Chiny",               "lat": 53.4715,  "lon": 122.3378},
+    {"nazwa": "Urumczi",                    "region": "Chiny",               "lat": 43.8256,  "lon": 87.6168},
+    {"nazwa": "Lhasa",                      "region": "Chiny (Tybet)",       "lat": 29.6500,  "lon": 91.1000},
+    {"nazwa": "Norylsk",                    "region": "Rosja",               "lat": 69.3535,  "lon": 88.2027},
+    {"nazwa": "Wladywostok",                "region": "Rosja",               "lat": 43.1332,  "lon": 131.9113},
+    {"nazwa": "Murmansk",                   "region": "Rosja",               "lat": 68.9585,  "lon": 33.0827},
+    {"nazwa": "Rovaniemi",                  "region": "Finlandia",           "lat": 66.5039,  "lon": 25.7294},
+    {"nazwa": "Sodankyla",                  "region": "Finlandia",           "lat": 67.4166,  "lon": 26.5901},
+    {"nazwa": "Kiruna",                     "region": "Szwecja",             "lat": 67.8558,  "lon": 20.2253},
+    {"nazwa": "Ostersund",                  "region": "Szwecja",             "lat": 63.1792,  "lon": 14.6357},
+    {"nazwa": "Tromso",                     "region": "Norwegia",            "lat": 69.6492,  "lon": 18.9553},
+    {"nazwa": "Roros",                      "region": "Norwegia",            "lat": 62.5750,  "lon": 11.3844},
+    {"nazwa": "Reykjavik",                  "region": "Islandia",            "lat": 64.1466,  "lon": -21.9426},
+    {"nazwa": "Akureyri",                   "region": "Islandia",            "lat": 65.6885,  "lon": -18.1262},
+    {"nazwa": "Banff",                      "region": "Kanada",              "lat": 51.1784,  "lon": -115.5708},
+    {"nazwa": "Yellowknife",                "region": "Kanada",              "lat": 62.4540,  "lon": -114.3718},
+    {"nazwa": "Quebec_City",                "region": "Kanada",              "lat": 46.8139,  "lon": -71.2080},
+    {"nazwa": "Anchorage",                  "region": "USA (Alaska)",        "lat": 61.2181,  "lon": -149.9003},
+    {"nazwa": "Duluth",                     "region": "USA (Minnesota)",     "lat": 46.7867,  "lon": -92.1005},
+    {"nazwa": "Garmisch_Partenkirchen",     "region": "Niemcy",              "lat": 47.4917,  "lon": 11.0956},
+    {"nazwa": "Oberstdorf",                 "region": "Niemcy",              "lat": 47.4021,  "lon": 10.2793},
+    {"nazwa": "Aviemore",                   "region": "Wielka Brytania",     "lat": 57.1930,  "lon": -3.8270},
+    {"nazwa": "Braemar",                    "region": "Wielka Brytania",     "lat": 57.0064,  "lon": -3.3970},
+    {"nazwa": "Sapporo",                    "region": "Japonia",             "lat": 43.0618,  "lon": 141.3545},
+    {"nazwa": "Nagano",                     "region": "Japonia",             "lat": 36.6513,  "lon": 138.1810},
+    {"nazwa": "Manali",                     "region": "Indie",               "lat": 32.2432,  "lon": 77.1892},
+    {"nazwa": "Gulmarg",                    "region": "Indie",               "lat": 34.0484,  "lon": 74.3805},
+    {"nazwa": "Sutherland",                 "region": "RPA",                 "lat": -32.3833, "lon": 20.6667},
+    {"nazwa": "Mount_Hotham",               "region": "Australia",           "lat": -36.9833, "lon": 147.1333},
 ]
 
 # ---------------------------------------------------------------------------
-# 2. SEZONY ZIMOWE (listopad roku Y - marzec roku Y+1)
+# 2. SEZON ZIMOWY - TYLKO 2025/2026 (listopad 2025 - marzec 2026), na wyraźne
+#    życzenie użytkownika ("chcę mieć wszystkie dane z 2025 roku dla każdej z
+#    podanej lokalizacji") - w konwencji tego projektu sezon zimowy zaczyna się
+#    w listopadzie roku Y, więc "rok 2025" = sezon (2025, 2026). Wcześniejsze
+#    sezony (2021-2024) dla pierwotnych 8 stacji świadomie USUNIĘTE z aktywnego
+#    zestawu danych (patrz komentarz w AGENTS.md) - wciąż odzyskiwalne z historii
+#    gita, gdyby były jeszcze kiedyś potrzebne.
 # ---------------------------------------------------------------------------
 SEZONY = [
-    (2021, 2022),
-    (2022, 2023),
-    (2023, 2024),
-    (2024, 2025),
     (2025, 2026),
 ]
 
@@ -66,11 +118,31 @@ HOURLY_VARS = "temperature_2m,dew_point_2m,precipitation,wind_speed_10m,sunshine
 ROZDZIELCZOSC_MIN = 60   # natywny krok danych z /v1/archive to 1h
 
 
-def pobierz_dane(stacja, rok_start, rok_koniec):
-    """Pobiera dane godzinowe dla jednej stacji i jednego sezonu zimowego."""
-    start_date = f"{rok_start}-11-01"
-    end_date = f"{rok_koniec}-03-31"
+def wyznacz_okno_zimowe(stacja, rok_start, rok_koniec):
+    """
+    Zwraca (start_date, end_date) okna zimowego DLA WŁAŚCIWEJ półkuli.
 
+    Półkula PÓŁNOCNA (lat >= 0): listopad(rok_start) - marzec(rok_koniec) - jak
+    dotychczas w tym projekcie.
+    Półkula POŁUDNIOWA (lat < 0): maj(rok_start) - wrzesień(rok_start) - zima na
+    półkuli południowej wypada w PRZECIWNYM półroczu (czerwiec-sierpień to tam
+    LATO na północy = ZIMA na południu), więc okno jest przesunięte o 6 miesięcy
+    i NIE przekracza granicy roku kalendarzowego (w odróżnieniu od okna
+    północnego, które celowo obejmuje przełom roku - listopad-marzec).
+
+    Bez tego rozróżnienia (błąd wykryty i naprawiony 2026-09-03 przy pierwszym
+    pobraniu 6 lokalizacji południowych - Ushuaia/Bariloche/Punta Arenas/
+    Coyhaique/Sutherland/Mount Hotham) skrypt pobrałby dla tych lokalizacji
+    dane z ICH LATA (listopad-marzec), a nie zimy - bezwartościowe dla analizy
+    ogrzewania rozjazdów kolejowych w warunkach zimowych.
+    """
+    if stacja["lat"] >= 0:
+        return f"{rok_start}-11-01", f"{rok_koniec}-03-31"
+    return f"{rok_start}-05-01", f"{rok_start}-09-30"
+
+
+def pobierz_dane(stacja, start_date, end_date):
+    """Pobiera dane godzinowe dla jednej stacji i jednego okna dat (patrz wyznacz_okno_zimowe)."""
     params = {
         "latitude": stacja["lat"],
         "longitude": stacja["lon"],
@@ -89,10 +161,12 @@ def pobierz_dane(stacja, rok_start, rok_koniec):
 def main():
     for stacja in STACJE:
         for rok_start, rok_koniec in SEZONY:
-            print(f"Pobieram: {stacja['nazwa']} ({stacja['typ']}, {stacja['region']}) "
-                  f"sezon {rok_start}/{rok_koniec}...")
+            start_date, end_date = wyznacz_okno_zimowe(stacja, rok_start, rok_koniec)
+            polkula = 'płn.' if stacja["lat"] >= 0 else 'płd.'
+            print(f"Pobieram: {stacja['nazwa']} ({stacja['region']}, półkula {polkula}) "
+                  f"okno {start_date} -> {end_date}...")
             try:
-                dane = pobierz_dane(stacja, rok_start, rok_koniec)
+                dane = pobierz_dane(stacja, start_date, end_date)
             except requests.exceptions.RequestException as e:
                 print(f"  BŁĄD: {e} — pomijam ten sezon")
                 continue

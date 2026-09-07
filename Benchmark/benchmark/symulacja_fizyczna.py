@@ -25,6 +25,13 @@ sys.path.insert(0, os.path.join(BASE_DIR, 'Algorytmy'))
 sys.path.insert(0, os.path.join(BASE_DIR, 'Model_sniegu_SnowClim'))
 
 from snowclim_physical_model import SnowClimPhysicalModel  # noqa: E402
+# Progi bezpieczeństwa normy LET-1 - używane WYŁĄCZNIE do liczenia
+# 'kara_bezpieczenstwa'/'epizody_ponizej_floor' (patrz niżej w uruchom_kontroler
+# i notatki/kara_bezpieczenstwa.md) - reeksport z funkcja_ryzyka_wspolne.py,
+# żeby nie duplikować tych samych liczb w dwóch miejscach (jedno źródło prawdy).
+from funkcja_ryzyka_wspolne import (  # noqa: E402
+    RISK_SNOW_LINGER_THRESHOLD_MM, RISK_SNOW_PENALTY_PER_MM_C, RISK_HRT_ABSOLUTE_FLOOR_C,
+)
 
 SUWALKI_LATITUDE_DEG = 54.1
 MOC_ZAMIANOWA_GRZALKI_KW = 14.0
@@ -304,12 +311,27 @@ def uruchom_kontroler(name, controller, method_name, df_1s, hrt_weather_all,
     prev_power = None
     zabezpieczen_uzytych = 0
 
-    # --- JAKOŚĆ REGULACJI (IAE/ISE/ITAE) - patrz akumulacja niżej w pętli oraz
-    # przypis w stats na końcu funkcji. Liczone TYLKO na krokach, w których
-    # kontroler zwrócił diagnostykę z 'target_temperature' ORAZ 'need_heat'
-    # True (czyli faktycznie DĄŻY do jakiegoś celu) - algorytmy bez takiej
-    # diagnostyki (compute_control*, algorytm_z_normy, fuzzy_logic_*, które
-    # zwracają samą moc bez celu) mają te pola None w stats. 'episode_time_s'
+    # --- KARA BEZPIECZEŃSTWA - patrz notatki/kara_bezpieczenstwa.md po pełny
+    # opis. W ODRÓŻNIENIU od IAE/ISE/ITAE (mierzą jak DOBRZE algorytm trzyma
+    # się WŁASNEGO, wyznaczonego celu) to jest miara WYNIKU fizycznego wobec
+    # BEZWZGLĘDNYCH progów bezpieczeństwa normy - liczona dla KAŻDEGO
+    # algorytmu na KAŻDYM kroku, niezależnie od diagnostyki/need_heat (miara
+    # SKUTKU, nie intencji), z PRAWDZIWYCH odczytów (sprzed fault_injectora,
+    # tak jak min_hrt/max_snieg_mm/zabezpieczen_normy_uzytych - to statystyki
+    # WYNIKU symulacji, nie tego, co widział/czym kierował się kontroler). ---
+    kara_bezpieczenstwa_suma = 0.0
+    epizody_ponizej_floor = 0
+    byl_ponizej_floor = False
+
+    # --- JAKOŚĆ REGULACJI (IAE/ISE/ITAE) - patrz notatki/IAE_ISE_ITAE.md po
+    # pełny opis z przykładami. Liczone TYLKO na krokach, w których kontroler
+    # zwrócił diagnostykę z 'target_temperature' ORAZ 'need_heat' True (czyli
+    # faktycznie DĄŻY do jakiegoś celu) - WSZYSTKIE 35 algorytmy mają teraz
+    # taką diagnostykę (2026-09-02: nawet compute_control*/algorytm_z_normy -
+    # cel = próg wyłączenia aktywnej gałęzi gdy grzeją; fuzzy_logic_* -
+    # cel = ich stały T_ZADANA), więc pola te są None w stats TYLKO gdyby
+    # kontroler był w fazie autotestu przez CAŁY przebieg (fit_ok=False przez
+    # cały czas, skrajny/testowy przypadek). 'episode_time_s'
     # to czas OD POCZĄTKU BIEŻĄCEGO epizodu grzania (resetowany za każdym
     # przejściem need_heat False->True) - ITAE liczone względem NIEGO, nie
     # względem absolutnego czasu symulacji, żeby długie przebiegi (miesiące)
@@ -437,6 +459,30 @@ def uruchom_kontroler(name, controller, method_name, df_1s, hrt_weather_all,
         hist_precip_1s[index] = precip_1s
         hist_snow_1s[index] = snow_val
 
+        # Trzy składowe kary bezpieczeństwa (aktywna tylko gdy przekroczony
+        # odpowiedni próg), każda przeliczona na °C-ekwiwalent i CAŁKOWANA po
+        # czasie (jak IAE) - dłuższe/głębsze naruszenie waży więcej:
+        #   1) Zalegający śnieg powyżej RISK_SNOW_LINGER_THRESHOLD_MM (próg
+        #      WSPÓLNY z funkcja_ryzyka_wspolne.py) - nadmiar w mm przeliczony
+        #      na °C-ekwiwalent przez RISK_SNOW_PENALTY_PER_MM_C (TA SAMA
+        #      konwersja, której funkcja ryzyka już używa do kary za śnieg).
+        #   2) Marznący deszcz (opad + CRT lub AT <= 1°C, definicja jak w
+        #      _evaluate_risk_setpoint) PODCZAS gdy HRT wciąż < +2°C - deficyt.
+        #   3) HRT poniżej bezwzględnego dolnego limitu normy (-10°C) - deficyt.
+        snow_excess_mm = max(0.0, snow_mm - RISK_SNOW_LINGER_THRESHOLD_MM)
+        is_raining_prawdziwy = rain_val > 0.0001
+        is_freezing_rain_prawdziwy = is_raining_prawdziwy and (current_crt <= 1.0 or at_temp <= 1.0)
+        marznacy_deszcz_deficyt_c = (2.0 - current_hrt) if (is_freezing_rain_prawdziwy and current_hrt < 2.0) else 0.0
+        floor_deficyt_c = max(0.0, RISK_HRT_ABSOLUTE_FLOOR_C - current_hrt)
+
+        kara_bezpieczenstwa_suma += dt * (
+            snow_excess_mm * RISK_SNOW_PENALTY_PER_MM_C + marznacy_deszcz_deficyt_c + floor_deficyt_c
+        )
+        ponizej_floor_teraz = current_hrt < RISK_HRT_ABSOLUTE_FLOOR_C
+        if ponizej_floor_teraz and not byl_ponizej_floor:
+            epizody_ponizej_floor += 1
+        byl_ponizej_floor = ponizej_floor_teraz
+
         if print_progress:
             is_last = index == total_steps - 1
             now = time.time()
@@ -481,15 +527,17 @@ def uruchom_kontroler(name, controller, method_name, df_1s, hrt_weather_all,
         # Rzeczywiście zmierzona liczba FLOPs wykonanych PRZEZ TEN kontroler w
         # TYM przebiegu (patrz rdzen_kontrolera.KontrolerBazowy._dodaj_flopy) -
         # None dla kontrolerów bez tego licznika (nie powinno się zdarzyć,
-        # wszystkie 23 algorytmy go mają, ale getattr na wszelki wypadek).
+        # wszystkie 35 algorytmy go mają, ale getattr na wszelki wypadek).
         'flops_rzeczywiste': getattr(controller, '_flops_licznik', None),
-        # --- Jakość regulacji (patrz akumulacja IAE/ISE/ITAE wyżej w pętli) -
-        # None, gdy algorytm nigdy nie zwrócił diagnostyki z target_temperature
-        # (compute_control*, algorytm_z_normy, fuzzy_logic_* - brak jawnego
-        # celu ciągłego, nie da się policzyć błędu regulacji). ---
+        # --- Jakość regulacji (patrz notatki/IAE_ISE_ITAE.md) - None tylko,
+        # gdy w CAŁYM przebiegu nigdy nie wystąpił krok z need_heat=True
+        # (iae_liczba_krokow==0), np. bardzo ciepła pogoda przez całe okno. ---
         'iae': iae_suma if iae_liczba_krokow > 0 else None,
         'ise': ise_suma if iae_liczba_krokow > 0 else None,
         'itae': itae_suma if iae_liczba_krokow > 0 else None,
+        # --- Kara bezpieczeństwa (patrz notatki/kara_bezpieczenstwa.md) ---
+        'kara_bezpieczenstwa': kara_bezpieczenstwa_suma,
+        'epizody_ponizej_floor': epizody_ponizej_floor,
     }
     if print_progress and snow_reference_mm is not None:
         print(f"  Bezpiecznik parytetu ze śniegiem z normy zadziałał {zabezpieczen_uzytych} razy.")

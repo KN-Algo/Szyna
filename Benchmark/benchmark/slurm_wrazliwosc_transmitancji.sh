@@ -3,7 +3,7 @@
 #
 # ANALIZA WRAŻLIWOŚCI na niepewność modelu obiektu (transmitancja GRZANIA,
 # SOPDT K/T1/T2/L - patrz symulacja_fizyczna.przygotuj_modele_stanowe): PEŁNY
-# przegląd (43 lokalizacje x 23 algorytmy, pełny zakres dat) powtórzony dla 8
+# przegląd (44 lokalizacje x 35 algorytmy, pełny zakres dat) powtórzony dla 8
 # scenariuszy, w których PRAWDZIWY symulowany obiekt (nie założenia żadnego
 # algorytmu) ma zaburzone parametry względem nominalnych:
 #
@@ -87,7 +87,7 @@ esac
 echo "Scenariusz: $SZYNA_SCENARIUSZ (K${SZYNA_PERTURB_K:+}% T1${SZYNA_PERTURB_T1:+}%)"
 
 # Celowo NIE ustawiamy SZYNA_MAX_DNI/SZYNA_LOKALIZACJE/SZYNA_ALGORYTMY -
-# pełny zakres dat, wszystkie 43 lokalizacje, wszystkie 23 algorytmy (zgodnie
+# pełny zakres dat, wszystkie 44 lokalizacje, wszystkie 35 algorytmy (zgodnie
 # z decyzją użytkownika - patrz uzasadnienie kosztu w nagłówku pliku).
 export SZYNA_FOLDER_WYNIKOW="$SCRIPT_DIR/wyniki/wrazliwosc_transmitancji/$SZYNA_SCENARIUSZ"
 

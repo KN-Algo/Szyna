@@ -521,6 +521,58 @@ ALGORYTMY = {
         'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu + log uczenia',
         'pamiec_przyblizona_mb': 21.0,
     },
+    'mpc_liniowy': {
+        'modul': 'funkcja_mpc_liniowy',
+        'klasa': 'KontrolerMPCLiniowy',
+        'metoda': 'mpc_liniowy',
+        'opis': 'Regulator predykcyjny (MPC) - co 15 min rozwiązuje QP (scipy L-BFGS-B) na 8-blokowym horyzoncie '
+                '2h, minimalizując energię + karę za deficyt wobec progu z funkcji ryzyka + karę za skoki mocy. '
+                'Zaburzenie (CRT) na horyzoncie ZAKŁADANE STAŁE (wariant kontrolny bez prognozy pogody) - '
+                'funkcja_mpc_liniowy.py, mpc_wspolne.py.',
+        'bezpiecznik': True,
+        'typ': 'MPC (QP, model SOPDT blokowy)',
+        'cel': 'Funkcja ryzyka (Kalman) - optymalizacja trajektorii BEZ prognozy pogody',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) na krok, skok co 900s (blok 15-min) - rozwiązanie QP (8 zmiennych, kilkadziesiąt iteracji L-BFGS-B)',
+        'flops_na_krok': 800,  # ZMIERZONE (nie szacowane analitycznie - solver czyni to bezcelowym, patrz nagłówek pliku): stats['flops_rzeczywiste']/liczba_kroków z 3-dniowego przebiegu testowego (abisko_60min_2021, krok 10s).
+        'zlozonosc_pamieciowa': 'O(1) (bufor kroczący) + bufory autotestu/modelu blokowego',
+        'pamiec_przyblizona_mb': 3.0,
+    },
+    'mpc_prognoza_pogody': {
+        'modul': 'funkcja_mpc_prognoza',
+        'klasa': 'KontrolerMPCPrognoza',
+        'metoda': 'mpc_prognoza',
+        'opis': 'Jak mpc_liniowy, ale zaburzenie (CRT) na horyzoncie brane z prognozy Kalmana, a cel/próg '
+                'bezpieczeństwa z wariantu funkcji ryzyka Z prognozą opadu (przewidywanie_opadow.py) - "pełna" '
+                'wersja MPC wykorzystująca wszystkie dostępne prognozy. Kluczowe porównanie z mpc_liniowy: czysta '
+                'wartość dodana prognozy pogody przy pełnej optymalizacji trajektorii - funkcja_mpc_prognoza.py.',
+        'bezpiecznik': True,
+        'typ': 'MPC (QP, model SOPDT blokowy)',
+        'cel': 'Funkcja ryzyka (Kalman) + prognoza opadu - optymalizacja trajektorii Z prognozą pogody',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) na krok, skok co 900s (blok 15-min) - rozwiązanie QP (8 zmiennych, kilkadziesiąt iteracji L-BFGS-B) + rzadkie wywołania prognozy opadu',
+        'flops_na_krok': 805,  # ZMIERZONE (patrz komentarz przy mpc_liniowy) - z tego samego 3-dniowego przebiegu testowego.
+        'zlozonosc_pamieciowa': 'O(1) (bufor kroczący) + bufory autotestu/modelu blokowego',
+        'pamiec_przyblizona_mb': 3.0,
+    },
+    'mpc_miekkie_ograniczenia': {
+        'modul': 'funkcja_mpc_miekkie',
+        'klasa': 'KontrolerMPCMiekkie',
+        'metoda': 'mpc_miekkie',
+        'opis': 'Jak mpc_prognoza_pogody (ta sama prognoza CRT/opadu, ten sam cel), ale INNY kształt kary za '
+                'zbliżanie się do progu bezpieczeństwa w funkcji kosztu MPC: bariera wykładnicza (rośnie już PRZED '
+                'przekroczeniem progu, szybciej niż kwadratowo po przekroczeniu) zamiast kary czysto progowej '
+                '(zero aż do przekroczenia). Test wpływu SAMEGO KSZTAŁTU kary na kompromis energia/bezpieczeństwo '
+                '- funkcja_mpc_miekkie.py, mpc_wspolne.py.',
+        'bezpiecznik': True,
+        'typ': 'MPC (QP, model SOPDT blokowy, bariera wykładnicza)',
+        'cel': 'Funkcja ryzyka (Kalman) + prognoza opadu - optymalizacja trajektorii z barierą bezpieczeństwa',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) na krok, skok co 900s (blok 15-min) - rozwiązanie QP (8 zmiennych, kilkadziesiąt iteracji L-BFGS-B) + rzadkie wywołania prognozy opadu',
+        'flops_na_krok': 805,  # SZACUNEK po analogii do mpc_prognoza_pogody (identyczna struktura kosztu solvera, jedyna różnica to inny wzór skalarny w _kara_bezpieczenstwa_mpc) - do zmierzenia realnie przy najbliższym pełnym przebiegu testowym.
+        'zlozonosc_pamieciowa': 'O(1) (bufor kroczący) + bufory autotestu/modelu blokowego',
+        'pamiec_przyblizona_mb': 3.0,
+    },
     'fuzzy_ryzyko_3_opad': {
         'modul': 'funkcja_fuzzy_ryzyko_3_opad',
         'klasa': 'KontrolerFuzzyRyzyko3Opad',
@@ -534,6 +586,45 @@ ALGORYTMY = {
         'flops_na_krok': 507,
         'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu',
         'pamiec_przyblizona_mb': 21.0,
+    },
+    'histereza_pamiec_rosy': {
+        'modul': 'histereza_pamiec_rosy',
+        'klasa': 'KontrolerHisterezaPamiecRosy',
+        'metoda': 'compute_control',
+        'opis': 'Histereza z punktem rosy, inspirowana polityką "P_mem" (Chiaradonna i in. 2021, Sustainable '
+                'Computing: Informatics and Systems 30) - załącza grzanie, gdy HRT <= punkt_rosy + T_thr ORAZ '
+                'HRT <= T_thr (jedyny algorytm w projekcie faktycznie czytający PUNKT_ROSY_C). Wykrywa "zawieszenie" '
+                'odczytu punktu rosy (brak zmiany przez DELTA_M_KROKOW kolejnych kroków - naturalny odpowiednik '
+                'awarii łącza z pracy) i wtedy przechodzi na politykę bazową (sam próg temperatury, bez punktu '
+                'rosy) - histereza_pamiec_rosy.py.',
+        'bezpiecznik': True,
+        'typ': 'Histereza (próg + punkt rosy, z pamięcią)',
+        'cel': 'Punkt rosy + próg referencyjny T_thr (fallback na sam próg przy zawieszonym odczycie)',
+        'adaptacyjny': False,
+        'zlozonosc_czasowa': 'O(1) na krok',
+        'flops_na_krok': 12,
+        'zlozonosc_pamieciowa': 'O(1) (bufor kroczący dziedziczony z KontrolerBazowy, nieużywany do prognozy)',
+        'pamiec_przyblizona_mb': 0.5,
+    },
+    'predykcja_wygladzanie_prosta': {
+        'modul': 'predykcja_wygladzanie_prosta',
+        'klasa': 'KontrolerPredykcjaWygladzanie',
+        'metoda': 'compute_control',
+        'opis': 'Regulator progowy na PROGNOZIE (nie bieżącym odczycie) HRT, inspirowany polityką "P_pre" '
+                '(Chiaradonna i in. 2021) - lekkie wygładzanie wykładnicze Holta (poziom+trend) na WŁASNEJ '
+                'historii HRT (binowanej co 15 min), CAŁKOWICIE ODDZIELNE od wspólnej prognozy Kalmana '
+                '(rdzen_kontrolera) używanej przez risk_function_pid/mpc_*. Próg efektywny SAMOKALIBRUJĄCY SIĘ: '
+                '= próg bazowy + własny, na bieżąco śledzony średni błąd bezwzględny prognozy (ε_f) - jedyny '
+                'algorytm w projekcie z marginesem bezpieczeństwa wynikającym z historii własnej trafności, nie '
+                'stałą - predykcja_wygladzanie_prosta.py.',
+        'bezpiecznik': True,
+        'typ': 'Regulator progowy (prognoza Holta, margines samokalibrujący)',
+        'cel': 'Prognoza HRT (wygładzanie wykładnicze) + próg bazowy + margines = śledzony błąd własnej prognozy',
+        'adaptacyjny': False,
+        'zlozonosc_czasowa': 'O(1) na krok, skok co ~900s (zamknięcie binu 15-min)',
+        'flops_na_krok': 15,
+        'zlozonosc_pamieciowa': 'O(MAX_BLEDOW_W_PAMIECI=50) (lista błędów prognozy) + O(1) (bufor kroczący, nieużywany do prognozy)',
+        'pamiec_przyblizona_mb': 0.5,
     },
 }
 

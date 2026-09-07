@@ -1,0 +1,4 @@
+wiersze: 2560
+unikalne lokalizacje (surowe pliki): 78
+unikalne algorytmy: 35
+algorytmy: ['algorytm_z_normy', 'compute_control', 'compute_control_gorski', 'fuzzy_logic_1', 'fuzzy_logic_2', 'fuzzy_logic_2v2', 'fuzzy_logic_3', 'fuzzy_normy_1', 'fuzzy_normy_2', 'fuzzy_normy_2v2', 'fuzzy_normy_3', 'fuzzy_ryzyko_1', 'fuzzy_ryzyko_1_opad', 'fuzzy_ryzyko_2', 'fuzzy_ryzyko_2_opad', 'fuzzy_ryzyko_2v2', 'fuzzy_ryzyko_2v2_opad', 'fuzzy_ryzyko_3', 'fuzzy_ryzyko_3_opad', 'histereza_pamiec_rosy', 'mpc_liniowy', 'mpc_miekkie_ograniczenia', 'mpc_prognoza_pogody', 'nauka_kary', 'nauka_kary_blizniak', 'nauka_kary_opad', 'nauka_kary_ryzyko', 'nauka_kary_temp', 'norma_pid', 'predykcja_wygladzanie_prosta', 'risk_function', 'risk_function_opad', 'risk_function_pid', 'risk_function_pid_auto', 'risk_function_pid_opad']

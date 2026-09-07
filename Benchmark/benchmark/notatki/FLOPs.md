@@ -96,6 +96,16 @@ złożoności czasowej w rejestrze.
 | `nauka_kary_blizniak` | jw. + `funkcja_nauka_kary_pid_blizniak.py` | `10` + `2*8` + `15` | jw. + przejrzenie prognozy HRT z cyfrowego bliźniaka (8 kroków) |
 | `nauka_kary_ryzyko` | jw. + `funkcja_nauka_kary_pid_ryzyko.py` | `10` + `2*8` + `160`* + `2*8` + `15` | jw. + WSZYSTKIE trzy prognozy (AT, opad, bliźniak HRT) połączone w jeden wynik ryzyka |
 
+| `mpc_liniowy` / `mpc_prognoza_pogody` | `mpc_wspolne.py` (`_rozwiaz_mpc`, tylko na granicy bloku 15-min) | `nfev * horyzont * (2*n²+4*n+6)` (n = wymiar stanu modelu blokowego, zwykle 2) | Rozwiązanie QP (scipy `minimize`, L-BFGS-B) - `nfev` wywołań funkcji kosztu, każde symuluje trajektorię modelu blokowego na `horyzont` (do 8) bloków w przód |
+
+`mpc_liniowy`/`mpc_prognoza_pogody` to JEDYNE dwa algorytmy, gdzie `flops_na_krok` w rejestrze NIE
+jest szacunkiem analitycznym tylko ZMIERZONĄ wartością (`flops_rzeczywiste`/liczba_kroków z
+przebiegu testowego) - liczba wywołań funkcji kosztu (`nfev`) wewnątrz solvera QP zależy od tego, jak
+szybko L-BFGS-B zbiega w danej sytuacji, więc "policzenie operacji w kodzie" (jak dla reszty
+algorytmów) nie ma tu sensu - sam solver jest czarną skrzynką co do liczby iteracji. Patrz
+`Algorytmy/mpc_wspolne.py` po pełny opis mechaniki (model blokowy 15-minutowy z autotestu, move
+blocking, QP) i `notatki/algorytmy/mpc_liniowy.md`/`mpc_prognoza_pogody.md`.
+
 `*160` = koszt `przewidywanie_opadow.predict_winter_precipitation` (~20 FLOPs/krok horyzontu × 8
 kroków) — patrz `przewidywanie_opadow.py`. Doliczany TYLKO gdy dana ścieżka kodu faktycznie woła
 prognozę opadu (np. w `risk_function_opad` tylko wtedy, gdy w ogóle jesteśmy w gałęzi śniegu i

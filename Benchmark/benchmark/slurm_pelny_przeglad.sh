@@ -29,14 +29,16 @@
 # szacowane) na podstawie realnych testów lokalnych z krokiem symulacji 10s
 # (patrz KROK_SYMULACJI_S w teście_wszystkie_rownolegle.py): 56 zadań (28
 # algorytmów x 2 lokalizacje, okno 2 dni) zajęło 1.4 min na 4 rdzeniach, co
-# ekstrapolowane na pełny zakres dat (43 lokalizacje x 28 algorytmów, ~151 dni)
-# daje szacunek rzędu 150-300 CPU-h - 576h (12h x 48 rdzeni) to bezpieczny
-# zapas ponad to, NIE ślepe zgadywanie jak poprzednia wersja (2-16:00:00 =
-# 3072h), która ledwo nie zmieściła się w dostępnym budżecie konta
-# (QOSGrpCPUMinutesLimit). Jeśli mimo to zabraknie czasu w trakcie liczenia,
-# zadanie zostanie przerwane - patrz mechanizm wznawiania (SZYNA_WZNOW) w
-# test_wszystkie_rownolegle.py, nic się wtedy nie zmarnuje, wystarczy zlecić
-# to samo zadanie jeszcze raz.
+# ekstrapolowane na ÓWCZESNY pełny zakres dat (43 lokalizacje x 28 algorytmów,
+# ~151 dni) dawało szacunek rzędu 150-300 CPU-h. Rejestr od tego czasu urósł do
+# 35 algorytmów (dodane 3 warianty MPC + 2 algorytmy inspirowane literaturą) i
+# 44 lokalizacji (2026-09-03, nowa lista 44 lokalizacji użytkownika) - skalując
+# proporcjonalnie (35/28 x 44/43) daje to ~192-384 CPU-h, WCIĄŻ w granicach
+# zadeklarowanego budżetu 576 CPU-h (12h x 48
+# rdzeni) - bezpieczny zapas, nie ślepe zgadywanie. Jeśli mimo to zabraknie
+# czasu w trakcie liczenia, zadanie zostanie przerwane - patrz mechanizm
+# wznawiania (SZYNA_WZNOW) w test_wszystkie_rownolegle.py, nic się wtedy nie
+# zmarnuje, wystarczy zlecić to samo zadanie jeszcze raz.
 #
 # Przed odpaleniem: sprawdź dostępne godziny CPU usługi (service-balance --check-cpu)
 # i dostępność węzłów (check-partitions) - patrz
@@ -59,11 +61,11 @@
 #SBATCH --time=12:00:00
 #SBATCH -p lem-cpu
 #SBATCH --output=szyna_pelny_%j.log
-# 48 rdzeni x 64h = 3072 CPU-h - dopasowane pod dostępny budżet konta
-# (service-balance: ~3315h wolne). WIĘCEJ rdzeni/czasu = SLURM odrzuci
-# zgłoszenie (QOSGrpCPUMinutesLimit), bo iloczyn cpus x time przekroczy limit
-# konta niezależnie od tego, ile faktycznie zostanie zużyte. Jeśli po tym
-# zadaniu dojdzie zwiększenie puli godzin, można podnieść oba te parametry.
+# UWAGA budżetu konta: 48 rdzeni x 12h = 576 CPU-h (patrz uzasadnienie w
+# komentarzu przy tym --time wyżej). Sprawdź dostępne CPU-h PRZED zleceniem
+# (service-balance --check-cpu) - jeśli budżet jest ciaśniejszy niż 576h,
+# zmniejsz --cpus-per-task/--time proporcjonalnie (SLURM i tak odrzuci
+# zgłoszenie, gdy iloczyn cpus x time przekroczy limit konta - QOSGrpCPUMinutesLimit).
 
 set -euo pipefail
 

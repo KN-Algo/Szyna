@@ -1,7 +1,7 @@
 #!/bin/bash
 # slurm_smoke_test.sh
 #
-# MAŁY test przed pełnym przeglądem (43 lokalizacje x 23 algorytmy) - sprawdza
+# MAŁY test przed pełnym przeglądem (44 lokalizacje x 35 algorytmy) - sprawdza
 # na klastrze WCSS (https://man.e-science.pl/pl/kdm/slurm/gpu,
 # https://man.e-science.pl/pl/kdm/slurm/partycje-slurm):
 #   1) że środowisko Pythona (venv + pakiety) się stawia,
@@ -58,7 +58,7 @@ pip install -r "$SCRIPT_DIR/requirements.txt"
 
 # Ograniczony zakres - tylko test poprawności/wielowątkowości, nie wyniki do analizy.
 export SZYNA_MAX_DNI=1
-export SZYNA_LOKALIZACJE="abisko_60min_2021,abisko_60min_2022"
+export SZYNA_LOKALIZACJE="abisko_60min_2025,ojmiakon_60min_2025"
 export SZYNA_ALGORYTMY="algorytm_z_normy,risk_function,risk_function_pid,fuzzy_ryzyko_1_opad"
 export SZYNA_FOLDER_WYNIKOW="$SCRIPT_DIR/wyniki/smoke_test_klaster"
 

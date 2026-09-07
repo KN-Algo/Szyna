@@ -11,7 +11,7 @@
 # się w rozsądnym czasie lokalnie (orientacyjnie kilkadziesiąt minut, zależnie od
 # liczby rdzeni), zamiast wielu godzin/dni pełnej skali. To celowy kompromis:
 # potwierdza, że WSZYSTKO DZIAŁA END-TO-END i daje pierwszy, orientacyjny obraz
-# wyników - pełne, statystycznie solidne przebiegi (43 lokalizacje, pełny zakres
+# wyników - pełne, statystycznie solidne przebiegi (44 lokalizacje, pełny zakres
 # dat, wszystkie scenariusze) uruchamiasz OSOBNO, tymi samymi skryptami z
 # ustawieniami domyślnymi (albo przez odpowiedni skrypt slurm_*.sh na klastrze).
 #
@@ -34,11 +34,11 @@ PYTHON = sys.executable
 # --- TRYB SZYBKI: ustawiane TYLKO jeśli użytkownik jeszcze nie ustawił sam. ---
 _DOMYSLNE_SZYBKIE = {
     'SZYNA_MAX_DNI': '3',
-    'SZYNA_LOKALIZACJE': 'abisko_60min_2024,ojmiakon_60min_2024,krakow_60min_2023,wroclaw_15min_2024,fairbanks_60min_2022',
+    'SZYNA_LOKALIZACJE': 'abisko_60min_2025,ojmiakon_60min_2025,krakow_60min_2025,wroclaw_15min_2024,fairbanks_60min_2025',
     'SZYNA_MAX_DNI_WRAZ': '5',
     'SZYNA_SCENARIUSZE_WRAZ': 'nominal,K_plus20',
     'SZYNA_MAX_DNI_DIAG': '5',
-    'SZYNA_LOKALIZACJA_DIAG': 'abisko_60min_2024',
+    'SZYNA_LOKALIZACJA_DIAG': 'abisko_60min_2025',
     'SZYNA_ALGORYTMY_DIAG': 'risk_function_pid,risk_function_pid_auto',
     'SZYNA_MAX_DNI_AWARIE': '3',
     'SZYNA_LICZBA_LOKALIZACJI_SZUM': '2',
@@ -46,15 +46,15 @@ _DOMYSLNE_SZYBKIE = {
 }
 
 # test_szum_wielu_czujnikow.py to 29 scenariuszy x wszystkie algorytmy x N
-# lokalizacji - PRZY WSZYSTKICH 30 algorytmach nawet 2 lokalizacje x 2 dni to
+# lokalizacji - PRZY WSZYSTKICH 35 algorytmach nawet 2 lokalizacje x 2 dni to
 # ~1740 zadań (za dużo na "szybki" przebieg, zmierzone ~0.19 core-min/zadanie
 # przy 2-dniowym oknie -> rzędu godzin). Ograniczone do garstki reprezentatywnych
 # algorytmów (po jednym z głównych rodzin) WYŁĄCZNIE na czas tego jednego etapu
 # (patrz ETAPY niżej, 'env' per-etap - NIE globalnie, bo SZYNA_ALGORYTMY jest
-# też czytane przez główny przegląd, który MA sprawdzić wszystkie 30).
+# też czytane przez główny przegląd, który MA sprawdzić wszystkie 35).
 _ALGORYTMY_SZUM_SZYBKI = 'algorytm_z_normy,risk_function_pid,risk_function_pid_auto,fuzzy_ryzyko_2v2_opad,nauka_kary_opad'
 # Ta sama garstka reprezentatywnych algorytmów, z tego samego powodu, dla
-# test_wrazliwosc_dwie_lokalizacje.py (30 algorytmów x scenariusze x 2
+# test_wrazliwosc_dwie_lokalizacje.py (35 algorytmów x scenariusze x 2
 # lokalizacje x szum tak/nie też szybko rośnie - patrz komentarz wyżej).
 _ALGORYTMY_WRAZ_SZYBKI = _ALGORYTMY_SZUM_SZYBKI
 for _klucz, _wartosc in _DOMYSLNE_SZYBKIE.items():
@@ -62,11 +62,11 @@ for _klucz, _wartosc in _DOMYSLNE_SZYBKIE.items():
 
 # Krok sterowania osobny (test_wrazliwosc_kroku_sterowania.py czyta SZYNA_MAX_DNI
 # ogólne, ale chcemy go dodatkowo ograniczyć do 1 lokalizacji + 2 kroków, żeby
-# nie mnożyć czasu razy 43 lokalizacje x 5 kroków x 3 algorytmy).
+# nie mnożyć czasu razy 44 lokalizacje x 5 kroków x 35 algorytmy).
 os.environ.setdefault('SZYNA_KROKI_S', '10,60')
 
 ETAPY = [
-    ('Skuteczność prognozy opadów (43 pliki, pełna skala - i tak szybkie)',
+    ('Skuteczność prognozy opadów (44 pliki, pełna skala - i tak szybkie)',
      ['test_skutecznosc_prognozy_opadow.py'], {}),
     ('Główny przegląd (tryb szybki: 5 lokalizacji, 3 dni, wszystkie algorytmy)',
      ['test_wszystkie_rownolegle.py'], {}),
@@ -77,7 +77,7 @@ ETAPY = [
      ['test_diagnostyka_funkcji_ryzyka.py'], {}),
     ('Wrażliwość na krok sterowania (tryb szybki: 1 lokalizacja, 2 kroki)',
      ['test_wrazliwosc_kroku_sterowania.py'],
-     {'env': {'SZYNA_LOKALIZACJE': 'abisko_60min_2024'}}),
+     {'env': {'SZYNA_LOKALIZACJE': 'abisko_60min_2025'}}),
     ('Test odporności na awarie czujników (tryb szybki: 3 dni)',
      ['test_awarie_czujnikow.py'], {}),
     ('Test szumu wielu czujników (tryb szybki: 2 lokalizacje, 2 dni, 5 reprezentatywnych algorytmów)',

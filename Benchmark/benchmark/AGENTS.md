@@ -62,19 +62,73 @@ zachowaniu wymaganego poziomu bezpieczeństwa (norma jako twardy wyznacznik).
     Opisy_algorytmow, Zlozonosc_obliczeniowa, Wnioski). Wywoływane
     automatycznie na końcu `test_wszystkie_rownolegle.py`.
 
-## Zbiór algorytmów (30 sztuk, w `rejestr_algorytmow.ALGORYTMY`)
+## Zbiór algorytmów (32 sztuk, w `rejestr_algorytmow.ALGORYTMY`)
 
 Rodziny: automat/histereza wg normy (2, + wariant górski `compute_control_gorski`
 = 3), funkcja ryzyka binarna/PID (2) + ich warianty `_opad` (2), PID/fuzzy do
 progów normy (5), fuzzy logic "surowy" wokół stałego celu (4), fuzzy + funkcja
 ryzyka (4) + ich warianty `_opad` (4), uczenie adaptacyjne z kar `nauka_kary*`
-(5 — bazowy + temp/opad/bliźniak/ryzyko).
+(5 — bazowy + temp/opad/bliźniak/ryzyko), MPC (2 — `mpc_liniowy`/
+`mpc_prognoza_pogody`, patrz sekcja "MPC (regulator predykcyjny)" niżej).
 Dokładne opisy typu/celu/adaptacyjności — patrz zakładka "Opisy_algorytmow" w
 Excelu albo bezpośrednio `rejestr_algorytmow.py`. Opis DZIAŁANIA każdego
 algorytmu z osobna (bardziej szczegółowy niż jednolinijkowy `opis` w
 rejestrze) — patrz `notatki/algorytmy/*.md` (jeden plik na algorytm,
 **musi być aktualizowany w tym samym kroku co zmiana logiki danego
 algorytmu** — patrz `notatki/algorytmy/README.md`).
+
+## Wyniki z pełnej skali na klastrze (2026-09-03)
+
+Użytkownik uruchomił zadania na WCSS i przesłał wyniki (zip-y w `wyniki/`) - pliki
+`.xlsx` wyekstrahowane do `wyniki/wyniki_excela/<scenariusz>/`, pełna analiza liczbowa
+(przeliczona z surowych arkuszy `Dane`/`Wyniki`/itp. przez pandas, NIE odczytana z
+formuł Excela - te nie mają cache'owanych wartości, bo plik nigdy nie był otwarty w
+prawdziwym Excelu) w `wyniki/_analiza_klastra.md`. Poniżej kluczowe liczby.
+
+Uwaga terminologiczna (WYJAŚNIONE, nie jest to błąd): `przeglad_wielu_lokalizacji.zip`
+ma 1290 wierszy = **43 pliki pogodowe × 30 algorytmów**, dokładnie pełna skala. Kolumna
+"Lokalizacja" w Excelu pokazuje NAZWĘ MIASTA (10 unikalnych: Abisko, Fairbanks, Jakuck,
+Kraków, Ojmiakon, Old Crow, Oslo, Puszcza Białowieska, Suwałki, Wrocław), bo
+`parsuj_lokalizacje` rozdziela surową nazwę pliku na miasto/interwał/rok jako OSOBNE
+kolumny - 8 z tych miast ma po 5 plików (2021-2025) = 40, Suwałki 2 pliki (2010, 2023),
+Wrocław 1 plik (2024) = 40+2+1=43 pliki. Więc "10 unikalnych miast" i "43 pliki pogodowe"
+to nie sprzeczność - jedno liczy miasta, drugie pliki/lata. Przebieg jest KOMPLETNY.
+
+- **Główny przegląd (energia)**: zwycięzca energetycznie -
+  `fuzzy_ryzyko_2v2_opad` (Fuzzy+ryzyko+opad FL2v2) - 8031.5 kWh śr., -44.8% vs
+  `algorytm_z_normy` (14541.2 kWh). REKOMENDACJA PRAKTYCZNA z arkusza (nie zmieniona
+  przez pełną skalę): `risk_function_pid` - jedyny z 4 wariantów funkcji ryzyka BEZ
+  ani jednego przypadku przegrzania >35°C (35/35 pozostałych ma anomalie - wyczerpanie
+  dobowego budżetu przełączeń przy oscylujących warunkach, HRT dryfuje do ~47°C), przy
+  11598.5 kWh (tylko nieznacznie gorzej niż wariant binarny 12492.6 kWh) i 59.4x mniej
+  przełączeń. Najniższe IAE: `risk_function_pid_opad` (8.19M °C·s).
+- **Wrażliwość transmitancji K/T1** (nominal + 7 scenariuszy, też 10 lok. × 30 alg.):
+  K DOMINUJE (K+15% → -9.96% energii, monotonicznie), T1 PRAKTYCZNIE BEZ ZNACZENIA
+  (-0.06%...+0.01%, szum statystyczny). Scenariusz łączony K10_T1_10 (-6.78%) ≈ sam
+  K+10% (-6.87%) - cały efekt kombinacji pochodzi z K.
+- **Wrażliwość 2 lokalizacje + szum** (Abisko/Ojmiakon, 14 scenariuszy K/L/T1 x
+  szum on/off): patrz zaktualizowany wpis wyżej w "W trakcie / do ustalenia" -
+  katastrofalne załamanie identyfikacji SOPDT pod szumem POTWIERDZONE na pełnej skali
+  (K: 0.05%→98.4% błędu, T1: 1.1%→99.4%, R²: 1.000→-0.001), a `autotest_fit_ok` tego
+  NIE wykrywa.
+- **Krok sterowania** (top-3: `fuzzy_normy_2v2`/`fuzzy_ryzyko_2v2_opad`/`nauka_kary_opad`,
+  43 lok.): wpływ na energię mały (rozstęp 1.4-4.5% między najlepszym a najgorszym
+  krokiem), krok 600s systematycznie najgorszy. Wpływ na IAE WYRAŹNIEJSZY - do +14.6%
+  dla `nauka_kary_opad` między 60s (najlepszy) a 300s (najgorszy) - regulator uczący
+  się z karą traci precyzję śledzenia przy rzadszym próbkowaniu bardziej niż energię.
+  Krok 10-60s zawsze blisko optymalny, 1s nie daje wyraźnej poprawy.
+- **Szum wielu czujników**: patrz zaktualizowany wpis wyżej w sekcji "Status/co jest
+  zrobione" (pełna skala, kluczowe liczby: WIATR/PUNKT_ROSY zero wpływu, SNOW/PRECIP
+  dominują 42.6%/34.7%, `norma_pid` najbardziej odporny reaktywny algorytm).
+- **Awarie czujników** (pełna skala, 30 algorytmów): HRT_rozłączenie najgorszy typ
+  awarii (40.3% śr. |Δ energii|), AT_rozłączenie zerowy wpływ na WSZYSTKIE 30
+  algorytmów (żaden nie polega krytycznie na ciągłości AT). Najbardziej "kruche":
+  `risk_function`/`risk_function_opad` przy HRT_szum PRAWIE PODWAJAJĄ energię
+  (+110.6%/+109.3%) - ich warianty PID (`risk_function_pid*`) w TYM SAMYM scenariuszu
+  są niemal całkowicie stabilne (-0.6%) - kolejny mocny argument za PID nad binarną
+  wersją funkcji ryzyka (dodatkowo do braku anomalii przegrzania z głównego przeglądu).
+
+Pełne liczby, tabele per-scenariusz i metodologia weryfikacji - `wyniki/_analiza_klastra.md`.
 
 ## Wdrożenie na superkomputer (WCSS)
 
@@ -276,15 +330,19 @@ odpala się dopiero przy przekroczeniu 2x limitu SENSOR_HISTORY_MAX_SAMPLES).
       `controller.autotest_result`) z PRAWDZIWYMI zaburzonymi wartościami
       (`symulacja_fizyczna.K_H/T1_H/L_H * (1+pct/100)`) - kolumny
       `blad_identyfikacji_*_pct`. Zweryfikowane end-to-end (smoke test, 24/24
-      zadań, obie lokalizacje, Excel z 4 zakładkami). PRELIMINARY FINDING
-      (smoke test, 3-dniowe okno - do potwierdzenia na pełnym 45-dniowym
-      przebiegu): szum 2°C na HRT/CRT DRASTYCZNIE psuje identyfikację SOPDT
-      (błąd K/T1 rzędu -97%/-99% w jednym obserwowanym przypadku, mimo
-      `fit_ok=True`) - autotest wygląda na bardzo nieodporny na realistyczny
-      szum czujników w krótkim oknie identyfikacji. NIE URUCHOMIONE jeszcze w
-      pełnej skali (~60-90 core-h szacunkowo dla okna 45 dni) - czeka na
-      decyzję: lokalnie (dłużej) czy `sbatch slurm_wrazliwosc_2lok.sh`.
-- [x] **IAE/ISE/ITAE (jakość regulacji)** — `symulacja_fizyczna.uruchom_kontroler`
+      zadań, obie lokalizacje, Excel z 4 zakładkami). **PEŁNA SKALA URUCHOMIONA
+      NA KLASTRZE, PRELIMINARY FINDING POTWIERDZONY** (2026-09-03, patrz sekcja
+      "Wyniki z pełnej skali na klastrze" niżej i `wyniki/_analiza_klastra.md`):
+      błąd identyfikacji K rośnie z 0.05% (bez szumu) do 98.4% (z szumem),
+      T1 z 1.1% do 99.4%, L z 0.74% do 67.2%, R² dopasowania spada z 1.000 do
+      -0.001 - katastrofalne załamanie POTWIERDZONE na pełnym oknie, nie tylko
+      w smoke teście. ISTOTNE: flaga `autotest_fit_ok` zostaje `True` w 100%
+      przypadków ZARÓWNO bez, jak i z szumem - NIE wykrywa tego załamania,
+      więc nie nadaje się jako bramka jakości identyfikacji w praktycznym
+      wdrożeniu (otwarty problem, patrz "W trakcie / do ustalenia" niżej).
+- [x] **IAE/ISE/ITAE (jakość regulacji)** — pełny opis z wzorami i tabelą
+      "skąd target_temperature dla każdego algorytmu" w `notatki/IAE_ISE_ITAE.md`.
+      `symulacja_fizyczna.uruchom_kontroler`
       teraz przechwytuje diagnostykę zwracaną przez algorytm (`_get_power`
       zwraca `(moc, diagnostics)` zamiast samej mocy) i całkuje błąd
       `target_temperature - HRT_rzeczywista` PO CZASIE, tylko na krokach z
@@ -371,6 +429,251 @@ odpala się dopiero przy przekroczeniu 2x limitu SENSOR_HISTORY_MAX_SAMPLES).
       KLUCZE_UCZENIA_KARY, żeby nie mieszać niekompatybilnych schematów CSV).
       Patrz notatki/algorytmy/risk_function_pid_auto.md po pełny opis i
       zaobserwowane ograniczenie (koszt zaszumiony zmiennością pogody).
+- [x] **MPC (regulator predykcyjny): `mpc_liniowy` + `mpc_prognoza_pogody` + `mpc_miekkie_ograniczenia`**
+      (2026-09-03) - PRAWDZIWY MPC (optymalizuje CAŁĄ trajektorię mocy na
+      horyzoncie 2h), w odróżnieniu od `nauka_kary_blizniak`/`_ryzyko` (cyfrowy
+      bliźniak tam to feedforward tylko na POJEDYNCZY krok). Mechanika (wspólna,
+      `Algorytmy/mpc_wspolne.py`, mixin `_MPCMachineryMixin` dziedziczony RAZEM z
+      `KontrolerRyzykaBazowy`/`KontrolerRyzykaOpadBazowy`, BEZ diamentu w MRO):
+        - Z wyniku autotestu (K/T1/T2/L, ten sam mechanizm co `risk_function_pid`)
+          budowany DRUGI model stanowy, w rozdzielczości BLOKU 15-minutowego
+          (`dt=STEP_SECONDS=900s`, NIE `dt_sterowania` jak "cyfrowy bliźniak"
+          reszty algorytmów) - świadoma decyzja (patrz "Otwarte pytanie 1"
+          niżej), nie przeoczenie.
+        - Na KAŻDEJ granicy bloku 15-min: QP (`scipy.optimize.minimize`,
+          L-BFGS-B, boxy 0-100%, BEZ nowej zależności - scipy już jest w
+          requirements.txt) na 8 przyszłych wartościach mocy, koszt = energia +
+          kara za deficyt wobec progu z funkcji ryzyka + kara za skoki mocy.
+          Aplikuje STAŁĄ moc z pierwszego bloku planu przez CAŁY blok ("move
+          blocking") - klasyczny receding horizon co krok byłby nieopłacalny
+          obliczeniowo (dt_sterowania=1s x rok x 43 lokalizacje).
+        - `mpc_liniowy`: zaburzenie (CRT) na horyzoncie ZAKŁADANE STAŁE (wariant
+          kontrolny, "bez prognozy pogody"). `mpc_prognoza_pogody`: zaburzenie z
+          prognozy Kalmana + cel z wariantem funkcji ryzyka Z prognozą opadu
+          (`KontrolerRyzykaOpadBazowy`) - "pełna" wersja. Różnica energetyczna
+          między nimi = czysta wartość dodana prognozy pogody przy PEŁNEJ
+          optymalizacji trajektorii (w odróżnieniu od par `*_opad` reszty
+          algorytmów, gdzie różnica dotyczy tylko furtki ucieczki).
+        - Bezpieczeństwo: `need_heat=False` w BIEŻĄCEJ chwili natychmiast zeruje
+          moc (nie czeka na granicę bloku) - asymetria celowa (szybkie
+          wyłączenie, rozważne załączenie).
+        - Fallback: brak zidentyfikowanego modelu -> prosty regulator P;
+          niepowodzenie solvera (wyjątek/NaN) -> OSTATNIA zastosowana moc (nie
+          0%, nie norma) - status w `diagnostics['mpc_status']`.
+      Trzy "otwarte pytania" z propozycji użytkownika rozstrzygnięte (i
+      udokumentowane w nagłówku `mpc_wspolne.py`): (1) częstotliwość
+      przeplanowania = raz na blok 15-min (nie co krok), (2) solver = scipy
+      L-BFGS-B (nie osqp/cvxpy - problem wypukły, boxy proste, nowa zależność
+      niepotrzebna), (3) fallback solvera = ostatnia zastosowana moc.
+      Oprócz 2 wariantów WYSOKIEGO priorytetu (`mpc_liniowy`/`mpc_prognoza_pogody`)
+      dobudowany (2026-09-03, na życzenie użytkownika) 3. wariant ŚREDNIEGO
+      priorytetu: **`mpc_miekkie_ograniczenia`** - IDENTYCZNY jak
+      `mpc_prognoza_pogody`, ale z INNYM kształtem kary za zbliżanie się do
+      progu bezpieczeństwa: bariera wykładnicza (`_kara_bezpieczenstwa_mpc`
+      nadpisany - `kara = W × exp(-K × margin)`, nigdy dokładnie zero, rośnie
+      SZYBCIEJ niż kwadratowo pod progiem) zamiast kary czysto progowej (zero
+      aż do przekroczenia). Zaimplementowane jako HOOK w `_MPCMachineryMixin`
+      (`_kara_bezpieczenstwa_mpc`, domyślna implementacja = stara kara
+      kwadratowa progowa), żeby wariant dzielił CAŁĄ resztę maszynerii MPC bez
+      duplikacji kodu. Zweryfikowane: smoke test (abisko, 3 dni) pokazał
+      OCZEKIWANY kierunek - mpc_miekkie_ograniczenia zużywa WIĘCEJ energii
+      (423.7 kWh) niż mpc_liniowy (402.1) i mpc_prognoza_pogody (400.4),
+      zgodnie z hipotezą "bariera zostawia większy zapas cieplny". "Economic
+      MPC" (priorytet niski, wymaga taryfy zmiennej ceny energii, której NIE
+      MAMY) świadomie POMINIĘTY na wyraźne życzenie użytkownika - nie budować
+      niczego opartego o ceny/budżet energetyczny bez realnych danych taryfowych.
+      `flops_na_krok` w rejestrze dla `mpc_liniowy`/`mpc_prognoza_pogody` to
+      WYJĄTKOWO wartość ZMIERZONA (nie szacunek analityczny jak reszta
+      algorytmów) - liczba iteracji solvera QP nie da się sensownie oszacować
+      czytaniem kodu, patrz `notatki/FLOPs.md` (`mpc_miekkie_ograniczenia` ma
+      szacunek po analogii, jeszcze niezmierzony realnie). Zweryfikowane:
+      energia mpc_liniowy=402.1 kWh, mpc_prognoza_pogody=400.4 kWh (prognoza
+      pogody realnie oszczędza energię, zgodnie z oczekiwaniem),
+      mpc_miekkie_ograniczenia=423.7 kWh (bariera zostawia zapas, zgodnie z
+      hipotezą), IAE/ISE/ITAE i FLOPy rzeczywiste policzone poprawnie, 0
+      błędów. Patrz `notatki/algorytmy/mpc_liniowy.md`/`mpc_prognoza_pogody.md`/
+      `mpc_miekkie_ograniczenia.md`.
+- [x] **2 algorytmy z literatury: `histereza_pamiec_rosy` + `predykcja_wygladzanie_prosta`**
+      (2026-09-03, na życzenie użytkownika, wprost z przesłanej pracy: S.
+      Chiaradonna, G. Masetti, F. Di Giandomenico, F. Righetti, C. Vallati,
+      "Enhancing sustainability of the railway infrastructure: Trading energy
+      saving and unavailability through efficient switch heating policies",
+      Sustainable Computing: Informatics and Systems 30 (2021) 100519). Druga
+      przesłana praca (Jiang i in., "Distributed Energy Management..." - ADMM,
+      SOCP, traction grid + budynek stacji) NIE dotyczy bezpośrednio grzania
+      rozjazdów (inny problem: cała trakcja + komfort cieplny budynku stacji,
+      taryfa zmienna) - świadomie pominięta, nie ma naturalnego przełożenia na
+      "jeden kontroler jednego rozjazdu" bez wymyślania nowego problemu.
+        - **`histereza_pamiec_rosy`** (polityka "P_mem" + próg "koordynatora" z
+          pracy) - **PIERWSZY i JEDYNY algorytm w projekcie faktycznie
+          czytający `PUNKT_ROSY_C`** (potwierdzone wcześniej empirycznie: szum
+          na tym czujniku miał 0.00% wpływu na WSZYSTKIE pozostałe algorytmy -
+          żaden go nie używał). Reguła: załącz gdy `HRT <= punkt_rosy + T_thr`
+          ORAZ `HRT <= T_thr` (T_thr=3.0°C, spójne z `hrt_off_dry` reszty
+          projektu - praca testowała 0/5°C jako skrajności analizy wrażliwości,
+          bez jednej rekomendowanej wartości). Mechanizm "pamięci" z pracy
+          (użyj ostatniego znanego punktu rosy przez Δm kroków po awarii
+          łącza, potem przejdź na próg bez punktu rosy) zaimplementowany BEZ
+          osobnego modelu awarii sieci - wykrywamy "zawieszenie" wprost z
+          danych (punkt rosy niezmieniony przez DELTA_M_KROKOW=20 kroków,
+          dokładnie taki sam objaw jak realne rozłączenie czujnika).
+        - **`predykcja_wygladzanie_prosta`** (polityka "P_pre" z pracy) -
+          decyzja na PROGNOZIE HRT (wygładzanie wykładnicze Holta - poziom +
+          trend, O(1)/krok, na WŁASNEJ historii, binowanej co 15 min),
+          CAŁKOWICIE ODDZIELNEJ od wspólnej prognozy Kalmana z
+          `rdzen_kontrolera.py` używanej przez `risk_function_pid`/`mpc_*` -
+          świadomie uboższa metoda, zgodnie z ideą pracy "lokalny kontroler bez
+          dostępu do bogatszych zasobów koordynatora". **Kluczowa idea z pracy
+          (cytat, sekcja 4.2.3): próg bezpieczeństwa = próg bazowy + WŁASNY, na
+          bieżąco śledzony błąd bezwzględny prognozy (ε_f, średnia z do 50
+          ostatnich błędów |prognoza-rzeczywistość|)** - JEDYNY algorytm w
+          projekcie, w którym margines bezpieczeństwa NIE jest stałą.
+      Oba `bezpiecznik: True`, `adaptacyjny: False` (brak autotestu SOPDT -
+      to inny rodzaj adaptacji niż flaga rejestru mierzy). Registry: 35
+      algorytmy razem. Zweryfikowane smoke testem (Abisko+Ojmiakon, 5 dni,
+      6/6 OK) - ODKRYCIE: `histereza_pamiec_rosy` oszczędza dużo energii
+      (354-459 kWh, poniżej normy) kosztem BARDZO WYSOKIEJ kary bezpieczeństwa
+      (do 14.4 mln °C·s, min_hrt do -60°C w Ojmiakonie!) - dokładnie ten typ
+      kompromisu energia/dostępność, który sama praca źródłowa opisuje jako
+      ryzyko polityk P_mem/P_pre (jej Rys. 8-10). `predykcja_wygladzanie_prosta`
+      zachowuje się umiarkowaniej (energia zbliżona do normy, kara
+      bezpieczeństwa 9-16 tys. °C·s, min_hrt do -25°C) - margines
+      samokalibrujący pomaga, ale nie eliminuje ryzyka całkowicie w skrajnie
+      zimnych warunkach. Żaden z dwóch NIE MA (świadomie, wierność źródłu)
+      osobnego priorytetu "bezwzględna ochrona przed głębokim mrozem", jaki ma
+      kaskada funkcji ryzyka (priorytet #3) - realny, udokumentowany kompromis,
+      nie błąd implementacji. Patrz `notatki/algorytmy/histereza_pamiec_rosy.md`/
+      `predykcja_wygladzanie_prosta.md`.
+- [x] **Kara bezpieczeństwa (nowy wskaźnik) + Min HRT/epizody HRT<-10°C w Excelu**
+      (2026-09-03, na życzenie użytkownika) - UZUPEŁNIA IAE/ISE/ITAE, nie
+      zastępuje: IAE/ISE/ITAE mierzą jak DOBRZE algorytm trzyma się WŁASNEGO
+      celu, kara bezpieczeństwa mierzy jak BEZPIECZNY jest fizyczny WYNIK
+      wobec BEZWZGLĘDNYCH progów normy (te same 3 progi dla WSZYSTKICH
+      algorytmów w rejestrze, liczone ZAWSZE na każdym kroku - nie tylko gdy
+      need_heat=True - i z PRAWDZIWYCH odczytów, nie zafałszowanych
+      fault_injectorem). Trzy składowe (użytkownik podał dokładnie te
+      warunki), każda aktywna tylko przy przekroczeniu progu, °C-ekwiwalent,
+      CAŁKOWANA po czasie jak IAE: (1) zalegający śnieg > RISK_SNOW_LINGER_THRESHOLD_MM
+      (5mm, próg WSPÓLNY z funkcja_ryzyka_wspolne.py, przeliczony na °C przez
+      RISK_SNOW_PENALTY_PER_MM_C - też reużyty, nie nowy współczynnik), (2)
+      marznący deszcz + HRT wciąż <2°C, (3) HRT poniżej bezwzględnego floora
+      normy (-10°C). Osobno (na wyraźne życzenie użytkownika): `min_hrt`
+      (istniał już w stats, teraz dodany do Excela) i `epizody_ponizej_floor`
+      (licznik ZDARZEŃ z detekcją zbocza, jak `przelaczenia` - nie suma
+      kroków). W Excelu: 3 nowe kolumny w "Dane" (Min HRT/Kara
+      bezpieczeństwa/Epizody HRT<-10°C, podświetlane jak anomalie
+      przegrzania), 4 nowe w "Podsumowanie_algorytmy" (średnia kara, Min HRT
+      GLOBALNIE, **lokalizacja tego najgorszego przypadku** przez INDEX/MATCH
+      z podwójnym kryterium bez formuły tablicowej CSE - odpowiedź na "połącz
+      z miejscem gdzie to nastąpiło", suma epizodów), nowa sekcja "5)
+      NARUSZENIA BEZPIECZEŃSTWA" w "Wnioski" (tekst z realnie policzonymi
+      liczbami, jak sekcja anomalii przegrzania). Zweryfikowane: 64/64
+      algorytmy x 2 lokalizacje (abisko+ojmiakon, 5 dni) - Ojmiakon ujawnił
+      realny problem: rodzina `fuzzy_logic_*`/`fuzzy_normy_*` (stały cel 3°C,
+      bez priorytetu ochrony przed floorem) spada tam do HRT ≈-27...-33°C
+      (kara bezpieczeństwa rzędu milionów °C·s w oknie 5-dniowym) - dokładnie
+      ten typ ryzyka, którego IAE/ISE/ITAE NIE wykrywa (te algorytmy trzymają
+      się SWOJEGO celu nieźle, problem w samym celu). Patrz
+      `notatki/kara_bezpieczenstwa.md` po pełny opis z przykładem.
+- [x] **`notatki/wyniki_excel/` - jak czytać każdy plik Excela z wynikami**
+      (2026-09-03, na życzenie użytkownika) - jeden plik notatki NA KAŻDY z 8
+      generatorów Excela w projekcie (`podsumowanie_wynikow.md`,
+      `podsumowanie_wrazliwosc.md`, `podsumowanie_kroku_sterowania.md`,
+      `podsumowanie_szumu.md`, `podsumowanie_awarii.md`,
+      `podsumowanie_prognozy_opadow.md`, `diagnostyka_funkcji_ryzyka.md`,
+      `podsumowanie_master.md`, `README.md` jako indeks) - dla każdego: jakie
+      ma zakładki, co znaczy KAŻDA kolumna, i dokładny wzór/agregacja, jakim
+      dana wartość jest liczona (w tym które komórki to FORMUŁY EXCELA -
+      wymagają otwarcia w prawdziwym Excelu/LibreOffice raz, żeby scache'ować
+      wartość, zanim odczyta je np. pandas - opisane w README.md tego
+      folderu). Napisane wprost z kodu generatorów (nie z pamięci) - patrz
+      `notatki/wyniki_excel/README.md`.
+- [x] **Konsolidacja + przygotowanie klastra na 3 nowe algorytmy (2026-09-03)**
+      - użytkownik POCZĄTKOWO poprosił o doliczenie 3 nowych algorytmów
+      (2 istniejące MPC + nowy `mpc_miekkie_ograniczenia`) do WSZYSTKICH
+      testów LOKALNIE na laptopie (4 rdzenie/16GB) i scalenie z wynikami
+      klastra - policzony realny szacunek czasu (~13-14h dla 5 z 6 kategorii
+      testów, ale ~4-5 DNI dla samej wrażliwości transmitancji 8-scenariuszowej
+      przy tylko 4 rdzeniach) - **PLAN PORZUCONY W TRAKCIE**, użytkownik
+      zmienił zdanie: (1) dane pogodowe będą się zmieniać, szczegóły w
+      OSOBNEJ, jeszcze nieotrzymanej wiadomości - NIE rozpoczynać żadnych
+      dalszych dużych obliczeń zależnych od konkretnych lokalizacji/plików
+      pogodowych, dopóki ta wiadomość nie przyjdzie; (2) zamiast liczyć
+      lokalnie, PRZYGOTOWAĆ całość do uruchomienia na SUPERKOMPUTERZE (nie
+      laptopie) z nowymi algorytmami. Efekt tej zmiany planu:
+        - `test_wrazliwosc_kroku_sterowania.py`: domyślna lista algorytmów
+          rozszerzona z 3 do 6 (dopisane `mpc_liniowy`/`mpc_prognoza_pogody`/
+          `mpc_miekkie_ograniczenia`) - zweryfikowane smoke testem (12/12 OK,
+          wszystkie 3 MPC działają poprawnie przy różnych krokach sterowania).
+          `slurm_krok_sterowania.sh` zaktualizowany (szacunek kosztu 14→28
+          core-h, liczba zadań 645→1290).
+        - Pozostałe 5 kategorii testów (główny przegląd, wrażliwość
+          transmitancji 8x, wrażliwość 2-lokalizacyjna+szum, szum wielu
+          czujników, awarie czujników) już DYNAMICZNIE iterują cały rejestr
+          `ALGORYTMY` - ZERO zmian kodu potrzebnych, nowe algorytmy trafią
+          tam automatycznie przy najbliższym uruchomieniu `uruchom_wszystko.sh`.
+          `scipy` (jedyna zależność MPC) już jest w `requirements.txt`.
+        - Dodano `SZYNA_ALGORYTMY`/wznowienie-scalanie do
+          `test_awarie_czujnikow.py` (wcześniej nie miał ANI filtra algorytmów,
+          ANI wznowienia - każde uruchomienie NADPISYWAŁO CSV od zera) - teraz
+          spójne z resztą skryptów, przyda się przy każdym przyszłym
+          doliczaniu tylko wybranych algorytmów.
+        - **`generuj_excel_wrazliwosc_transmitancji.py`** (NOWY, na życzenie
+          użytkownika: "jedne zbiorczy plik excel z wynikami całości" dla
+          różnych transmitancji) - konsoliduje 8 osobnych plików
+          `Podsumowanie_wynikow.xlsx` (nominal + 7 scenariuszy K/T1) z
+          `wyniki/wyniki_excela/<scenariusz>/` w JEDEN plik
+          `wyniki/wyniki_excela/Podsumowanie_wrazliwosc_transmitancji_WSZYSTKIE.xlsx`
+          (3 zakładki: Dane_wszystkie [10320 wierszy], Podsumowanie_scenariusze
+          [macierz algorytm x scenariusz, energia + %vs nominal], Wnioski
+          [tekst] - zweryfikowane na realnych danych z klastra, liczby zgodne
+          z wcześniejszą analizą w `wyniki/_analiza_klastra.md`: K+15%→-9.96%,
+          T1 praktycznie bez znaczenia).
+        - **`zbierz_wyniki_excel.py`** (NOWY, na życzenie użytkownika: "do
+          osobnego folderu wszystkie excele z wynikami") - reużywalna wersja
+          ręcznej ekstrakcji zipów wykonanej wcześniej (patrz wpis o
+          `wyniki/wyniki_excela/` wyżej w tym pliku) - skanuje `wyniki/*.zip`,
+          wyciąga TYLKO pliki `.xlsx` (pomija ogromne surowe CSV per-krok) do
+          `wyniki/wyniki_excela/<nazwa_zipa>/`, wykrywa i pomija bajt-identyczne
+          duplikaty. NIE uruchomiony przeciw obecnym danym (folder już był
+          ręcznie uporządkowany wcześniej w tej sesji - uruchomienie od nowa
+          stworzyłoby inaczej nazwane, zduplikowane foldery) - gotowy do użycia
+          przy NASTĘPNYM uploadzie wyników z klastra.
+        - `test_wrazliwosc_kroku_sterowania.py`: domyślna lista algorytmów
+          ZNOWU rozszerzona (2026-09-03, na kolejne życzenie użytkownika -
+          "przeliczyć dla WSZYSTKICH algorytmów, nie tylko wybranych, żeby
+          całość była bardziej miarodajna") - teraz WSZYSTKIE 33 z rejestru
+          zamiast poprzedniej curatorowanej 6-tki (import `ALGORYTMY` na
+          poziomie modułu, `list(ALGORYTMY)` jako domyślna wartość
+          `SZYNA_ALGORYTMY_KROK`). `slurm_krok_sterowania.sh` ponownie
+          zaktualizowany: 1290→7095 zadań, szacunek kosztu 28→154 core-h,
+          `--time` 2h→6h (bezpieczny zapas 288 core-h).
+        - **IAE/ISE/ITAE/kara bezpieczeństwa % względem normy LET-1** (nowe
+          kolumny P/Q/R/S w zakładce "Dane", `generuj_excel_podsumowanie.py`)
+          - na życzenie użytkownika: "niech norma [algorytm_z_normy] będzie
+          naszym punktem odniesienia do całości". Wzór:
+          `(wartość − wartość_normy) / wartość_normy × 100`, baseline OSOBNY
+          dla KAŻDEJ (Lokalizacja, Interwał, Rok) - nie jeden globalny numer,
+          bo jakość regulacji/bezpieczeństwo zależy silnie od konkretnej
+          pogody. Puste, gdy baseline normy = 0 (częste dla kary
+          bezpieczeństwa - norma z definicji rzadko łamie własne progi).
+          Zweryfikowane smoke testem (algorytm_z_normy, risk_function_pid,
+          mpc_liniowy, fuzzy_logic_1, 2 lokalizacje) - norma zawsze 0% (self-
+          comparison), i ujawniło REALNY wynik: `fuzzy_logic_1` w Ojmiakonie
+          ma karę bezpieczeństwa 46015% WYŻSZĄ niż norma (14 216.8 vs
+          6 556 146.7 °C·s) - norma z definicji prawie nigdy nie łamie
+          własnych progów, więc odchylenie w tysiącach % u innych algorytmów
+          jest natychmiast czytelnym sygnałem realnego naruszenia
+          bezpieczeństwa. Patrz `notatki/IAE_ISE_ITAE.md` i
+          `notatki/kara_bezpieczenstwa.md` (sekcje "% względem normy LET-1").
+          Podsumowanie_algorytmy (zakładka zbiorcza) NIE rozszerzone o
+          analogiczne średnie kolumny - jeśli potrzebne, dorobić przy
+          najbliższej okazji (świadomie pominięte teraz, żeby nie rozdmuchać
+          już bardzo szerokiej tabeli bez wyraźnej prośby).
+      **OTWARTE - czeka na wiadomość użytkownika**: szczegóły zmiany danych
+      pogodowych (jaka zmiana, czy dotyczy istniejących 43 plików czy nowego
+      zestawu) - wstrzymać dalsze duże obliczenia/uruchomienia klastrowe do
+      czasu otrzymania tych szczegółów.
 - [x] **Redukcja złożoności pamięciowej: bufor kroczący zamiast surowej
       historii** (2026-09-02, na życzenie użytkownika) - `rdzen_kontrolera.KontrolerBazowy`
       trzymał surową historię odczytów (`self.sensor_history` - lista obiektów
@@ -418,29 +721,43 @@ odpala się dopiero przy przekroczeniu 2x limitu SENSOR_HISTORY_MAX_SAMPLES).
       = 8410 zadań. IAE/ISE/ITAE liczone jak zawsze w głównej pętli
       (`uruchom_kontroler`), więc automatycznie w wynikach. Zweryfikowane
       (2 lokalizacje x 2 algorytmy x 29 scenariuszy = 116/116 OK, 5.6 min).
-      KOSZT PEŁNEJ SKALI: zmierzone ~0.19 core-min/zadanie przy oknie 2-dniowym,
-      ekstrapolacja do domyślnego okna 10-dniowego (5x) ≈ 135 core-h szacunkowo
-      - NIE URUCHOMIONE jeszcze w pełnej skali, czeka na decyzję (lokalnie w
-      tle vs `sbatch slurm_szum_wielu_czujnikow.sh`).
+      **URUCHOMIONE W PEŁNEJ SKALI NA KLASTRZE** (2026-09-03, wyniki
+      przeanalizowane, patrz sekcja "Wyniki z pełnej skali na klastrze" i
+      `wyniki/_analiza_klastra.md`): degradacja energii rośnie monotonicznie z
+      poziomem szumu (lekki 10.4% śr. odchylenia -> ekstremalny 15.7%), ale
+      NIE dramatycznie. Kluczowe odkrycie: czujniki WIATR/PUNKT_ROSY mają
+      ZEROWY wpływ na KAŻDY algorytm (nieużywane w logice decyzyjnej żadnego z
+      32), za to SNOW/PRECIP dominują wrażliwość (42.6%/34.7% śr. odchylenia -
+      rząd wielkości więcej niż czujniki temperatury HRT 7.0%/AT 3.7%/CRT
+      2.4%). Najbardziej odporny reaktywny algorytm: `norma_pid` (3.5% śr.
+      odchylenia); najmniej: `compute_control_gorski` (27.1%).
 - [x] **`notatki/` - dokumentacja poza kodem** - `notatki/FLOPs.md` (pełny
       mechanizm liczenia FLOPs, analityczny vs rzeczywisty, z tabelą WSZYSTKICH
       miejsc `_dodaj_flopy` w kodzie) + `notatki/algorytmy/*.md` (jeden plik
-      opisowy na każdy z 28 algorytmów, `README.md` tam jako indeks). Musi być
+      opisowy na każdy z 32 algorytmów, `README.md` tam jako indeks). Musi być
       aktualizowane razem ze zmianami kodu - patrz przypis przy "Zbiór
       algorytmów" wyżej.
 
 ## Orkiestracja wszystkich zadań SLURM naraz
 
 `uruchom_wszystko.sh` (zwykły skrypt bash, NIE sbatch - uruchamiany bezpośrednio
-`bash uruchom_wszystko.sh`) zleca WSZYSTKIE 4 zadania naraz w łańcuchu zależności
+`bash uruchom_wszystko.sh`) zleca WSZYSTKIE 7 zadań naraz w łańcuchu zależności
 SLURM (`sbatch --dependency=afterok:<job_id>`): smoke_test -> pelny_przeglad ->
-wrazliwosc_transmitancji -> test_awarie, sekwencyjnie (nie równolegle - żeby nie
+wrazliwosc_transmitancji -> wrazliwosc_2lok -> krok_sterowania ->
+szum_wielu_czujnikow -> test_awarie, sekwencyjnie (nie równolegle - żeby nie
 mnożyć jednoczesnej rezerwacji CPU-godzin i nie trafić znów na
 QOSGrpCPUMinutesLimit). Jeśli którekolwiek zadanie w łańcuchu zawiedzie
 (exit != 0), SLURM automatycznie anuluje resztę (DependencyNeverSatisfied) -
-zero ręcznej interwencji potrzebnej między zadaniami. Dodano też
-`slurm_test_awarie.sh` (brakujący dotąd sbatch script dla
-test_awarie_czujnikow.py, 16 rdzeni/100G/2h, partycja lem-cpu-short).
+zero ręcznej interwencji potrzebnej między zadaniami. Rozszerzone 2026-09-02 o
+3 nowe sbatch scripty (poprzednio 4 zadania/`slurm_test_awarie.sh` jedyny
+dodatek): `slurm_wrazliwosc_2lok.sh` (~60-90 core-h szacunkowo),
+`slurm_krok_sterowania.sh` (~14 core-h szacunkowo, NOWY - wcześniej ten test
+nie miał sbatch scriptu wcale), `slurm_szum_wielu_czujnikow.sh` (~135 core-h
+szacunkowo). Po zakończeniu WSZYSTKICH zadań: `python generuj_excel_master.py`
+(patrz generuj_excel_master.py) buduje JEDEN skonsolidowany
+`wyniki/Podsumowanie_MASTER.xlsx` ze wszystkich wyników naraz - działa też
+bezpośrednio na klastrze, nie tylko lokalnie (pomija bez błędu zadania, które
+jeszcze nie mają wyników).
 
 ## Pełna weryfikacja przed wdrożeniem na klaster (2026-08-27)
 

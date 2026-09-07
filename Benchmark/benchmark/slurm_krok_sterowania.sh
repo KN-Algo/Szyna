@@ -2,14 +2,19 @@
 # slurm_krok_sterowania.sh
 #
 # Wrażliwość na krok sterowania (test_wrazliwosc_kroku_sterowania.py) w PEŁNEJ
-# skali: wszystkie 43 lokalizacje x 3 domyślne algorytmy (fuzzy_ryzyko_2v2_opad,
-# fuzzy_normy_2v2, nauka_kary_opad - zwycięzcy wstępnego rankingu, patrz
-# AGENTS.md) x 5 kroków sterowania (1/10/60/300/600s) x okno 30 dni = 645 zadań.
+# skali: wszystkie 44 lokalizacje x WSZYSTKIE 35 algorytmy (domyślna lista rozszerzona
+# 2026-09-03 z curatorowanej 6-tki na pełny rejestr, na życzenie użytkownika - "żeby
+# całość była bardziej miarodajna, nie tylko wybrane") x 5 kroków sterowania
+# (1/10/60/300/600s) x okno 30 dni = 7700 zadań.
 #
 # KOSZT: zmierzone lokalnie (smoke test w ramach uruchom_wszystkie_testy.py,
-# 1 lokalizacja x 3 algorytmy x 2 kroki, okno 3 dni) - ~0.13 core-min/zadanie.
-# Ekstrapolacja do pełnej skali (okno 30 dni, 10x) x 645 zadań ≈ 14 core-h
-# szacunkowo. --cpus-per-task=48 / --time=2:00:00 = 96 core-h - bezpieczny zapas.
+# 1 lokalizacja x 3 algorytmy [bez MPC] x 2 kroki, okno 3 dni) - ~0.13 core-min/zadanie.
+# Ekstrapolacja do pełnej skali (okno 30 dni, 10x) x 7700 zadań (~6x poprzedniej
+# liczby po rozszerzeniu z 6 na 35 algorytmy i z 43 na 44 lokalizacji) ≈ 167 core-h
+# szacunkowo - MPC nie zmierzone empirycznie osobno, ale QP na 8 zmiennych to
+# pojedyncze ms/rozwiązanie, więc rząd wielkości powinien zostać podobny.
+# --cpus-per-task=48 / --time=6:00:00 = 288 core-h - bezpieczny zapas (wcześniej
+# 2:00:00/96 core-h - ZA MAŁO na tę skalę).
 #
 # WAŻNE: zlecaj TYLKO przez `sbatch`, NIGDY przez `sh`/`bash` bezpośrednio.
 #
@@ -22,7 +27,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=48
 #SBATCH --mem=500G
-#SBATCH --time=2:00:00
+#SBATCH --time=6:00:00
 #SBATCH -p lem-cpu
 #SBATCH --output=szyna_krok_sterowania_%j.log
 
@@ -39,7 +44,7 @@ pip install --upgrade pip
 pip install -r "$SCRIPT_DIR/requirements.txt"
 
 # Celowo NIE ustawiamy SZYNA_ALGORYTMY_KROK/SZYNA_LOKALIZACJE/SZYNA_MAX_DNI -
-# domyślnie: 3 zwycięzcy rankingu, wszystkie 43 lokalizacje, okno 30 dni.
+# domyślnie: WSZYSTKIE 35 algorytmy z rejestru, wszystkie 44 lokalizacje, okno 30 dni.
 export SZYNA_FOLDER_WYNIKOW_KROK="$SCRIPT_DIR/wyniki/wrazliwosc_kroku"
 
 python test_wrazliwosc_kroku_sterowania.py

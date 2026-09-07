@@ -280,7 +280,8 @@ def main():
 
     df_wszystkie = pd.DataFrame(wszystkie_statystyki)
     kolumny = ['lokalizacja', 'name', 'energia_kwh', 'przelaczenia', 'max_snieg_mm', 'max_lod_mm', 'max_hrt', 'min_hrt',
-               'srednia_moc_pct', 'godziny_ze_sniegiem', 'zabezpieczen_normy_uzytych', 'dni', 'flops_rzeczywiste']
+               'srednia_moc_pct', 'godziny_ze_sniegiem', 'zabezpieczen_normy_uzytych', 'dni', 'flops_rzeczywiste',
+               'iae', 'ise', 'itae', 'kara_bezpieczenstwa', 'epizody_ponizej_floor']
     kolumny = [k for k in kolumny if k in df_wszystkie.columns]
     df_wszystkie = df_wszystkie[kolumny]
     df_wszystkie.to_csv(os.path.join(FOLDER_WYNIKOW, "PRZEGLAD_ZBIORCZY.csv"), index=False)
