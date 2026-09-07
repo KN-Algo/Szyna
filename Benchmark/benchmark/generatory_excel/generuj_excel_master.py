@@ -8,7 +8,7 @@
 # wynikowego) - można więc odpalić ten skrypt osobno w dowolnym momencie, nie
 # tylko na końcu uruchom_wszystkie_testy.py.
 #
-# Uruchomienie: python generuj_excel_master.py
+# Uruchomienie (z katalogu Benchmark/benchmark): python generatory_excel/generuj_excel_master.py
 
 import os
 import sys
@@ -17,7 +17,7 @@ import pandas as pd
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # benchmark/ (rodzic generatory_excel/)
 FOLDER_WYNIKOW_GLOWNY = os.path.join(BASE_DIR, 'wyniki')
 SCIEZKA_MASTER = os.path.join(FOLDER_WYNIKOW_GLOWNY, 'Podsumowanie_MASTER.xlsx')
 

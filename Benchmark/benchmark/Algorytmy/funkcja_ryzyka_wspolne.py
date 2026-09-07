@@ -35,6 +35,40 @@ RISK_SNOW_LINGER_THRESHOLD_MM = 5.0      # Powyżej tylu mm zalegającego śnieg
 RISK_SNOW_PENALTY_PER_MM_C = 0.05        # O ile °C podnosimy cel za każdy mm zalegającego śniegu - im więcej śniegu, tym więcej trzeba wytopić.
 RISK_SNOW_PENALTY_MAX_C = 6.0            # Górny limit dodatku z tytułu kary za śnieg (cel nie rośnie w nieskończoność).
 
+# ==========================================
+# WAGI METRYKI 'kara_bezpieczeństwa' (symulacja_fizyczna.uruchom_kontroler) -
+# CELOWO ODDZIELONE od stałych sterujących wyżej, mimo że nominalnie mają tę
+# samą wartość co RISK_SNOW_PENALTY_PER_MM_C. Kara bezpieczeństwa jest metryką
+# POROZNAWCZĄ liczoną z GROUND-TRUTH przebiegu (patrz notatki/kara_bezpieczenstwa.md),
+# nie wejściem do żadnej decyzji sterującej - to rozdzielenie pozwala testować
+# wrażliwość RANKINGU algorytmów na dobór tych wag (patrz KARA_WAGI_SCENARIUSZE
+# niżej) WYŁĄCZNIE post-hoc, z JUŻ zasymulowanej trajektorii, bez ponownego
+# odpalania fizyki/sterowania - gdyby te wagi były tymi samymi stałymi co wyżej,
+# ich zmiana zmieniałaby też zachowanie funkcji ryzyka (RISK_SNOW_PENALTY_PER_MM_C
+# steruje celem grzania przy zalegającym śniegu), co wymagałoby pełnej ponownej
+# symulacji dla każdego scenariusza wag - dokładnie tego, czego ten podział unika.
+KARA_WAGA_SNIEG_C_PER_MM = RISK_SNOW_PENALTY_PER_MM_C  # Nominalnie identyczna wartość, ale NIEZALEŻNA stała.
+KARA_WAGA_MROZ_DESZCZ = 1.0              # Waga deficytu marznącego deszczu (°C) w sumie kary - baza = 1.0 (bez ważenia).
+KARA_WAGA_FLOOR = 1.0                    # Waga deficytu poniżej floora -10°C w sumie kary - baza = 1.0 (bez ważenia).
+
+# Scenariusze do analizy wrażliwości wag kary bezpieczeństwa: każdy zaburza
+# JEDNĄ z trzech wag o +/-50% względem nominalnej (pozostałe dwie bez zmian) -
+# sprawdza, czy RANKING algorytmów wg kary bezpieczeństwa jest stabilny
+# niezależnie od dokładnego doboru tych (z natury nieco arbitralnych) wag.
+# Liczone w JEDNYM przebiegu symulacji razem z wariantem nominalnym (patrz
+# symulacja_fizyczna.uruchom_kontroler) - to tylko dodatkowe sumowanie po
+# już policzonych składowych (snow_excess_mm/marznacy_deszcz_deficyt_c/
+# floor_deficyt_c), więc ZERO dodatkowego kosztu ponownej symulacji fizyki.
+KARA_WAGI_SCENARIUSZE = {
+    # etykieta:            (mnożnik_snieg, mnożnik_mroz, mnożnik_floor)
+    'snieg_x0.5':           (0.5, 1.0, 1.0),
+    'snieg_x2':             (2.0, 1.0, 1.0),
+    'mroz_x0.5':            (1.0, 0.5, 1.0),
+    'mroz_x2':              (1.0, 2.0, 1.0),
+    'floor_x0.5':           (1.0, 1.0, 0.5),
+    'floor_x2':             (1.0, 1.0, 2.0),
+}
+
 
 class KontrolerRyzykaBazowy(KontrolerBazowy):
     """

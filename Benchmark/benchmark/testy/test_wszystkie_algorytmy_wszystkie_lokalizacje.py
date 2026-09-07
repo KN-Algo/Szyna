@@ -18,6 +18,7 @@
 # ==============================================================================
 
 import os
+import sys
 import traceback
 import pandas as pd
 import numpy as np
@@ -25,11 +26,14 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # benchmark/ (rodzic testy/)
+sys.path.insert(0, BASE_DIR)  # symulacja_fizyczna.py mieszka w benchmark/
+sys.path.insert(0, os.path.join(BASE_DIR, 'Algorytmy'))
+sys.path.insert(0, os.path.join(BASE_DIR, 'generatory_excel'))
+
 import symulacja_fizyczna as fiz
 from rejestr_algorytmow import ALGORYTMY, stworz_kontroler, podlega_bezpiecznikowi
 import generuj_excel_podsumowanie
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FOLDER_POGODA = os.path.join(BASE_DIR, "Pogoda_pomiary_15_minut")
 FOLDER_WYNIKOW = os.path.join(BASE_DIR, "wyniki", "przeglad_wielu_lokalizacji")
 os.makedirs(FOLDER_WYNIKOW, exist_ok=True)
@@ -283,6 +287,11 @@ def main():
                'srednia_moc_pct', 'godziny_ze_sniegiem', 'zabezpieczen_normy_uzytych', 'dni', 'flops_rzeczywiste',
                'iae', 'ise', 'itae', 'kara_bezpieczenstwa', 'epizody_ponizej_floor']
     kolumny = [k for k in kolumny if k in df_wszystkie.columns]
+    # Dowolne DODATKOWE kolumny spoza tej listy (np. kara_bezpieczenstwa__<scenariusz> -
+    # patrz KARA_WAGI_SCENARIUSZE w funkcja_ryzyka_wspolne.py) dopisujemy NA KOŃCU
+    # zamiast po cichu je gubić - ta lista wyżej istnieje tylko po to, żeby wymusić
+    # CZYTELNĄ KOLEJNOŚĆ znanych kolumn, nie żeby ograniczać zbiór do nich.
+    kolumny += [k for k in df_wszystkie.columns if k not in kolumny]
     df_wszystkie = df_wszystkie[kolumny]
     df_wszystkie.to_csv(os.path.join(FOLDER_WYNIKOW, "PRZEGLAD_ZBIORCZY.csv"), index=False)
 

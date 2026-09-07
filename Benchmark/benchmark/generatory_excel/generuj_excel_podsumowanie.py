@@ -30,7 +30,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.chart import LineChart, Reference
 import glob
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # benchmark/ (rodzic generatory_excel/)
 sys.path.insert(0, os.path.join(BASE_DIR, 'Algorytmy'))
 from rejestr_algorytmow import ALGORYTMY  # noqa: E402 - opisy/typ/cel/adaptacyjny dla zakładki "Opisy_algorytmow"
 # SZYNA_FOLDER_WYNIKOW pozwala przekierować wejście/wyjście do innego folderu
@@ -115,6 +115,8 @@ NAZWY_ALGORYTMOW = {
     'mpc_miekkie_ograniczenia': 'MPC (bariera wykładnicza)',
     'histereza_pamiec_rosy': 'Histereza + punkt rosy (pamięć)',
     'predykcja_wygladzanie_prosta': 'Predykcja (wygładzanie Holta)',
+    'risk_function_ladrc': 'ADRC (liniowy, LADRC)',
+    'risk_function_nadrc': 'ADRC (nieliniowy, NADRC)',
 }
 ALGORYTM_BAZOWY = 'Automat z normy (bazowy)'
 
@@ -414,6 +416,79 @@ def main():
         ws_alg.conditional_formatting.add(f'{litera}2:{litera}{ostatni_wiersz_alg}', skala)
 
     autoszerokosc(ws_alg)
+
+    # ==========================================================================
+    # ZAKŁADKA "Wrazliwosc_wag_kary" - CZY RANKING algorytmów wg kary
+    # bezpieczeństwa jest stabilny niezależnie od (z natury nieco arbitralnego)
+    # doboru wag trzech składowych (śnieg/marznący deszcz/floor -10°C)? Kolumny
+    # 'kara_bezpieczenstwa__<scenariusz>' (patrz KARA_WAGI_SCENARIUSZE w
+    # funkcja_ryzyka_wspolne.py) liczone RÓWNOLEGLE z wariantem nominalnym w
+    # TYM SAMYM przebiegu symulacji - pomijana bez błędu, jeśli dane pochodzą
+    # sprzed dodania tej analizy (kolumny jeszcze nie istnieją).
+    # ==========================================================================
+    kolumny_scenariuszy_kary = sorted(c for c in df.columns if c.startswith('kara_bezpieczenstwa__'))
+    if ma_kara and kolumny_scenariuszy_kary:
+        ws_waga = wb.create_sheet('Wrazliwosc_wag_kary')
+        ws_waga.cell(row=1, column=1, value=(
+            'Każdy scenariusz zaburza JEDNĄ z trzech wag kary bezpieczeństwa o +/-50% względem '
+            'nominalnej (pozostałe dwie bez zmian) - patrz KARA_WAGI_SCENARIUSZE w '
+            'funkcja_ryzyka_wspolne.py i notatki/kara_bezpieczenstwa.md. Cel: sprawdzić, czy RANKING '
+            'algorytmów wg kary bezpieczeństwa (1 = najbezpieczniejszy) jest stabilny niezależnie od '
+            'dokładnego doboru tych wag. "Δ ranga" = zmiana pozycji względem rankingu nominalnego '
+            '(0 = bez zmian, dodatnie = spadł w rankingu czyli wypadł GORZEJ pod tą wagą).'
+        ))
+        ws_waga.cell(row=1, column=1).font = Font(name=FONT_NAZWA, italic=True, size=9, color='555555')
+        ostatnia_kolumna_waga = 2 + 2 * len(kolumny_scenariuszy_kary)
+        ws_waga.merge_cells(start_row=1, start_column=1, end_row=1, end_column=ostatnia_kolumna_waga)
+
+        agregaty_scen = df.groupby('Algorytm')[['kara_bezpieczenstwa'] + kolumny_scenariuszy_kary].mean().reindex(lista_algorytmow)
+        # Tylko algorytmy FAKTYCZNIE obecne w tym przebiegu (reindex wyżej wstawia
+        # NaN dla brakujących - np. przy filtrowanym/testowym przebiegu) - inaczej
+        # .rank()/int() na samych NaN wysypałoby zapis.
+        lista_algorytmow_waga = [a for a in lista_algorytmow if pd.notna(agregaty_scen.loc[a, 'kara_bezpieczenstwa'])]
+        agregaty_scen = agregaty_scen.loc[lista_algorytmow_waga]
+        ranga_nominalna = agregaty_scen['kara_bezpieczenstwa'].rank(method='min')
+
+        WIERSZ_NAGLOWKA_WAGA = 2
+        naglowki_waga = ['Algorytm', 'Kara nominalna (śr.)', 'Ranga nominalna']
+        for kol in kolumny_scenariuszy_kary:
+            etykieta = kol.replace('kara_bezpieczenstwa__', '')
+            naglowki_waga += [f'Kara {etykieta} (śr.)', f'Δ ranga {etykieta}']
+        ustaw_naglowek(ws_waga, WIERSZ_NAGLOWKA_WAGA, naglowki_waga)
+
+        korelacje_spearman = {}
+        for wiersz_i, alg in enumerate(lista_algorytmow_waga, start=WIERSZ_NAGLOWKA_WAGA + 1):
+            ws_waga.cell(row=wiersz_i, column=1, value=alg).font = FONT_ZWYKLY
+            ws_waga.cell(row=wiersz_i, column=2, value=round(agregaty_scen.loc[alg, 'kara_bezpieczenstwa'], 2)).font = FONT_ZWYKLY
+            ws_waga.cell(row=wiersz_i, column=3, value=int(ranga_nominalna.loc[alg])).font = FONT_ZWYKLY
+            kolumna = 4
+            for kol in kolumny_scenariuszy_kary:
+                ranga_scen = agregaty_scen[kol].rank(method='min')
+                delta = int(ranga_scen.loc[alg] - ranga_nominalna.loc[alg])
+                ws_waga.cell(row=wiersz_i, column=kolumna,
+                              value=round(agregaty_scen.loc[alg, kol], 2)).font = FONT_ZWYKLY
+                komorka_delta = ws_waga.cell(row=wiersz_i, column=kolumna + 1, value=delta)
+                komorka_delta.font = FONT_ZWYKLY
+                korelacje_spearman.setdefault(kol, ranga_scen)
+                kolumna += 2
+        for wiersz_komorki in ws_waga.iter_rows(min_row=WIERSZ_NAGLOWKA_WAGA + 1, max_row=WIERSZ_NAGLOWKA_WAGA + len(lista_algorytmow_waga)):
+            for komorka in wiersz_komorki:
+                komorka.border = OBRAMOWANIE_CIENKIE
+
+        wiersz_korelacja = WIERSZ_NAGLOWKA_WAGA + len(lista_algorytmow_waga) + 2
+        ws_waga.cell(row=wiersz_korelacja, column=1, value='Korelacja rang Spearmana vs nominalna:').font = FONT_POGRUBIONY
+        kolumna = 4
+        for kol in kolumny_scenariuszy_kary:
+            r = ranga_nominalna.corr(korelacje_spearman[kol], method='spearman')
+            ws_waga.cell(row=wiersz_korelacja, column=kolumna,
+                          value=round(r, 3) if pd.notna(r) else None).font = FONT_POGRUBIONY
+            kolumna += 2
+        ws_waga.cell(row=wiersz_korelacja + 1, column=1, value=(
+            'Blisko 1.0 = ranking praktycznie niezależny od doboru tej wagi (odporny). '
+            'Znacząco poniżej 1.0 = ranking wrażliwy na tę konkretną wagę.'
+        )).font = Font(name=FONT_NAZWA, italic=True, size=9, color='555555')
+
+        autoszerokosc(ws_waga)
 
     # ==========================================================================
     # ZAKŁADKA "Podsumowanie_lokalizacje"

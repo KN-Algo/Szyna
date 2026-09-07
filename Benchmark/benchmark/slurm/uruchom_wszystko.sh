@@ -13,11 +13,11 @@
 #
 # Kolejność:
 #   1) slurm_smoke_test.sh                  (~30 min, weryfikacja środowiska)
-#   2) slurm_pelny_przeglad.sh               (pełny przegląd, 44 lok. x wszystkie 35 algorytmy - główny wynik, ~576 core-h budżetu)
+#   2) slurm_pelny_przeglad.sh               (pełny przegląd, 44 lok. x wszystkie 37 algorytmy - główny wynik, ~576 core-h budżetu)
 #   3) slurm_wrazliwosc_transmitancji.sh     (wrażliwość transmitancji, 44 lok. x 8 scenariuszy, do ~4608 core-h budżetu)
 #   4) slurm_wrazliwosc_2lok.sh              (pogłębiona wrażliwość + szum, 2 lok. x 14 scenariuszy x szum, ~68-102 core-h)
-#   5) slurm_krok_sterowania.sh              (wrażliwość na krok sterowania, 44 lok. x WSZYSTKIE 35 algorytmy x 5 kroków, ~157 core-h)
-#   6) slurm_szum_wielu_czujnikow.sh         (szum wielu czujników, 10 lok. x 29 scenariuszy x wszystkie 35 algorytmy, ~155 core-h)
+#   5) slurm_krok_sterowania.sh              (wrażliwość na krok sterowania, 44 lok. x WSZYSTKIE 37 algorytmy x 5 kroków, ~157 core-h)
+#   6) slurm_szum_wielu_czujnikow.sh         (szum wielu czujników, 10 lok. x 29 scenariuszy x wszystkie 37 algorytmy, ~155 core-h)
 #   7) slurm_test_awarie.sh                  (odporność na awarie czujników, ~32 core-h)
 #
 # WAŻNE: ten plik uruchamiasz BEZPOŚREDNIO (`bash`), NIE przez `sbatch` - to
@@ -25,37 +25,38 @@
 # i od razu kończy działanie (samo liczenie leci już niezależnie w SLURM-ie,
 # możesz spokojnie wylogować się zaraz po odpaleniu tego skryptu).
 #
-# Uruchomienie (z katalogu Benchmark/benchmark na klastrze):
-#   bash uruchom_wszystko.sh
+# Uruchomienie (z katalogu Benchmark/benchmark na klastrze - CWD musi być tam,
+# NIE w slurm/, bo ścieżki do sbatch niżej są względem niego):
+#   bash slurm/uruchom_wszystko.sh
 
 set -euo pipefail
 
 echo "1/7 Zlecam smoke_test..."
-JOB1=$(sbatch --parsable slurm_smoke_test.sh)
+JOB1=$(sbatch --parsable slurm/slurm_smoke_test.sh)
 echo "    -> job $JOB1"
 
 echo "2/7 Zlecam pelny_przeglad (odpali się automatycznie po sukcesie $JOB1)..."
-JOB2=$(sbatch --parsable --dependency=afterok:$JOB1 slurm_pelny_przeglad.sh)
+JOB2=$(sbatch --parsable --dependency=afterok:$JOB1 slurm/slurm_pelny_przeglad.sh)
 echo "    -> job $JOB2"
 
 echo "3/7 Zlecam wrazliwosc_transmitancji (odpali się automatycznie po sukcesie $JOB2)..."
-JOB3=$(sbatch --parsable --dependency=afterok:$JOB2 slurm_wrazliwosc_transmitancji.sh)
+JOB3=$(sbatch --parsable --dependency=afterok:$JOB2 slurm/slurm_wrazliwosc_transmitancji.sh)
 echo "    -> job $JOB3"
 
 echo "4/7 Zlecam wrazliwosc_2lok (odpali się automatycznie po sukcesie $JOB3)..."
-JOB4=$(sbatch --parsable --dependency=afterok:$JOB3 slurm_wrazliwosc_2lok.sh)
+JOB4=$(sbatch --parsable --dependency=afterok:$JOB3 slurm/slurm_wrazliwosc_2lok.sh)
 echo "    -> job $JOB4"
 
 echo "5/7 Zlecam krok_sterowania (odpali się automatycznie po sukcesie $JOB4)..."
-JOB5=$(sbatch --parsable --dependency=afterok:$JOB4 slurm_krok_sterowania.sh)
+JOB5=$(sbatch --parsable --dependency=afterok:$JOB4 slurm/slurm_krok_sterowania.sh)
 echo "    -> job $JOB5"
 
 echo "6/7 Zlecam szum_wielu_czujnikow (odpali się automatycznie po sukcesie $JOB5)..."
-JOB6=$(sbatch --parsable --dependency=afterok:$JOB5 slurm_szum_wielu_czujnikow.sh)
+JOB6=$(sbatch --parsable --dependency=afterok:$JOB5 slurm/slurm_szum_wielu_czujnikow.sh)
 echo "    -> job $JOB6"
 
 echo "7/7 Zlecam test_awarie (odpali się automatycznie po sukcesie $JOB6)..."
-JOB7=$(sbatch --parsable --dependency=afterok:$JOB6 slurm_test_awarie.sh)
+JOB7=$(sbatch --parsable --dependency=afterok:$JOB6 slurm/slurm_test_awarie.sh)
 echo "    -> job $JOB7"
 
 echo ""
@@ -75,4 +76,4 @@ echo "(status w squeue: DependencyNeverSatisfied) - sprawdź log tego, które pa
 echo ""
 echo "Po zakończeniu WSZYSTKICH zadań, zbuduj skonsolidowany Excel lokalnie"
 echo "(scp/rsync folder wyniki/ z klastra) albo bezpośrednio na klastrze:"
-echo "  python generuj_excel_master.py"
+echo "  python generatory_excel/generuj_excel_master.py"

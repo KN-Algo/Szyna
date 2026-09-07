@@ -25,17 +25,24 @@
 # realne zużycie na zadanie jest wielokrotnie niższe, ale 1200G i tak zostaje -
 # to tani, praktycznie darmowy zapas bezpieczeństwa (node ma 1430G limitu).
 #
-# --cpus-per-task=48 / --time=12:00:00 (12h) = 576 CPU-h - ZMIERZONE (nie
-# szacowane) na podstawie realnych testów lokalnych z krokiem symulacji 10s
-# (patrz KROK_SYMULACJI_S w teście_wszystkie_rownolegle.py): 56 zadań (28
-# algorytmów x 2 lokalizacje, okno 2 dni) zajęło 1.4 min na 4 rdzeniach, co
-# ekstrapolowane na ÓWCZESNY pełny zakres dat (43 lokalizacje x 28 algorytmów,
-# ~151 dni) dawało szacunek rzędu 150-300 CPU-h. Rejestr od tego czasu urósł do
-# 35 algorytmów (dodane 3 warianty MPC + 2 algorytmy inspirowane literaturą) i
-# 44 lokalizacji (2026-09-03, nowa lista 44 lokalizacji użytkownika) - skalując
-# proporcjonalnie (35/28 x 44/43) daje to ~192-384 CPU-h, WCIĄŻ w granicach
-# zadeklarowanego budżetu 576 CPU-h (12h x 48
-# rdzeni) - bezpieczny zapas, nie ślepe zgadywanie. Jeśli mimo to zabraknie
+# --cpus-per-task=64 / --time=12:00:00 (12h) = 768 CPU-h ceiling (podniesione z
+# 48 rdzeni na życzenie użytkownika 2026-09-07 - "niech będzie 64 rdzenie brane
+# do wyliczeń, niech się szybciej liczą" - WIĘCEJ równoległych procesów na to
+# samo zadanie = ta sama całkowita praca kończy się szybciej w czasie
+# rzeczywistym, NIE więcej pracy do zrobienia). Rzeczywiste zużycie CPU-h
+# (cpus x rzeczywisty czas, nie ta sama wielkość co "czas ściany") się NIE
+# zmienia z liczbą rdzeni - to ZMIERZONE (nie szacowane) na podstawie realnych
+# testów lokalnych z krokiem symulacji 10s (patrz KROK_SYMULACJI_S w
+# testy/test_wszystkie_rownolegle.py): 56 zadań (28 algorytmów x 2 lokalizacje,
+# okno 2 dni) zajęło 1.4 min na 4 rdzeniach, co ekstrapolowane na ÓWCZESNY
+# pełny zakres dat (43 lokalizacje x 28 algorytmów, ~151 dni) dawało szacunek
+# rzędu 150-300 CPU-h. Rejestr od tego czasu urósł do 37 algorytmów (dodane 3
+# warianty MPC + 2 algorytmy inspirowane literaturą) i 44 lokalizacji
+# (2026-09-03, nowa lista 44 lokalizacji użytkownika) - skalując proporcjonalnie
+# (35/28 x 44/43) daje to ~192-384 CPU-h, WCIĄŻ w granicach zadeklarowanego
+# budżetu 768 CPU-h (12h x 64 rdzeni) - bezpieczny zapas, nie ślepe zgadywanie,
+# a przy 64 zamiast 48 rdzeniach realny czas ściany krótszy o ok. 25%. Jeśli
+# mimo to zabraknie
 # czasu w trakcie liczenia, zadanie zostanie przerwane - patrz mechanizm
 # wznawiania (SZYNA_WZNOW) w test_wszystkie_rownolegle.py, nic się wtedy nie
 # zmarnuje, wystarczy zlecić to samo zadanie jeszcze raz.
@@ -50,13 +57,13 @@
 # sesja) i wykonuje się w środowisku sesji OnDemand, a nie nowego zadania.
 #
 # Uruchomienie (z katalogu Benchmark/benchmark na klastrze):
-#   sbatch slurm_pelny_przeglad.sh
+#   sbatch slurm/slurm_pelny_przeglad.sh
 
 #SBATCH -J szyna_pelny_przeglad
 #SBATCH --account=hpc-wikjan2416-1787599067
 #SBATCH -N 1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=48
+#SBATCH --cpus-per-task=64
 #SBATCH --mem=1000G
 #SBATCH --time=12:00:00
 #SBATCH -p lem-cpu
@@ -100,4 +107,4 @@ pip install -r "$SCRIPT_DIR/requirements.txt"
 # SLURM_CPUS_PER_TASK ustawione przez --cpus-per-task powyżej.
 export SZYNA_FOLDER_WYNIKOW="$SCRIPT_DIR/wyniki/przeglad_wielu_lokalizacji"
 
-python test_wszystkie_rownolegle.py
+python testy/test_wszystkie_rownolegle.py

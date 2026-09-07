@@ -3,7 +3,7 @@
 #
 # ANALIZA WRAŻLIWOŚCI na niepewność modelu obiektu (transmitancja GRZANIA,
 # SOPDT K/T1/T2/L - patrz symulacja_fizyczna.przygotuj_modele_stanowe): PEŁNY
-# przegląd (44 lokalizacje x 35 algorytmy, pełny zakres dat) powtórzony dla 8
+# przegląd (44 lokalizacje x 37 algorytmy, pełny zakres dat) powtórzony dla 8
 # scenariuszy, w których PRAWDZIWY symulowany obiekt (nie założenia żadnego
 # algorytmu) ma zaburzone parametry względem nominalnych:
 #
@@ -26,8 +26,10 @@
 #
 # KOSZT: to jest 8x pełny przegląd (patrz slurm_pelny_przeglad.sh) - KAŻDY z 8
 # elementów tablicy (--array=0-7) to OSOBNE zadanie SLURM z WŁASNĄ rezerwacją
-# cpus x czas (nie dzielą jednej puli) - przy --cpus-per-task=48/--time=12:00:00
-# to 576 CPU-h NA ELEMENT, razem do 4608 CPU-h dla całej tablicy, jeśli
+# cpus x czas (nie dzielą jednej puli) - przy --cpus-per-task=64/--time=12:00:00
+# to 768 CPU-h NA ELEMENT (podniesione z 48 rdzeni na życzenie użytkownika
+# 2026-09-07, żeby liczyło się szybciej - rzeczywista praca się nie zmienia,
+# tylko czas ściany), razem do 6144 CPU-h dla całej tablicy, jeśli
 # wszystkie 8 ruszyłoby jednocześnie. W praktyce QOS i tak dopuści tylko tyle
 # jednocześnie, ile pozwala dostępny budżet (service-balance) - reszta
 # poczeka w kolejce (status PD, powód QOSGrpCPUMinutesLimit) i wystartuje
@@ -39,19 +41,26 @@
 # Podsumowanie_wynikow.xlsx) - kolumna 'scenariusz'/'perturb_*_pct' w każdym
 # CSV pozwala je później bezpiecznie scalić w jedną analizę porównawczą.
 #
+# UWAGA: SZYNA_ZAPISZ_CSV_SZCZEGOLOWE=0 (ustawione niżej) - przy 8 scenariuszach
+# x 44 lokalizacje x 37 algorytmów szczegółowe CSV per (lokalizacja, algorytm)
+# to tysiące zbędnych plików (nieużywanych przez żaden z dwóch generatorów
+# Excela - patrz komentarz w test_wszystkie_rownolegle.py). Liczy się tylko
+# PRZEGLAD_ZBIORCZY.csv -> Podsumowanie_wynikow.xlsx per scenariusz, potem
+# generuj_excel_wrazliwosc_transmitancji.py scala 8 takich Exceli w jeden.
+#
 # WAŻNE: zlecaj TYLKO przez `sbatch` (kolejka SLURM), NIGDY przez `sh`/`bash`
 # bezpośrednio w terminalu.
 #
 # Uruchomienie (z katalogu Benchmark/benchmark na klastrze):
-#   sbatch slurm_wrazliwosc_transmitancji.sh
+#   sbatch slurm/slurm_wrazliwosc_transmitancji.sh
 # Podgląd wybranego scenariusza osobno (np. tylko K+10%, indeks 2):
-#   sbatch --array=2 slurm_wrazliwosc_transmitancji.sh
+#   sbatch --array=2 slurm/slurm_wrazliwosc_transmitancji.sh
 
 #SBATCH -J szyna_wrazliwosc
 #SBATCH --account=hpc-wikjan2416-1787599067
 #SBATCH -N 1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=48
+#SBATCH --cpus-per-task=64
 #SBATCH --mem=1000G
 #SBATCH --time=12:00:00
 #SBATCH -p lem-cpu
@@ -87,8 +96,9 @@ esac
 echo "Scenariusz: $SZYNA_SCENARIUSZ (K${SZYNA_PERTURB_K:+}% T1${SZYNA_PERTURB_T1:+}%)"
 
 # Celowo NIE ustawiamy SZYNA_MAX_DNI/SZYNA_LOKALIZACJE/SZYNA_ALGORYTMY -
-# pełny zakres dat, wszystkie 44 lokalizacje, wszystkie 35 algorytmy (zgodnie
+# pełny zakres dat, wszystkie 44 lokalizacje, wszystkie 37 algorytmy (zgodnie
 # z decyzją użytkownika - patrz uzasadnienie kosztu w nagłówku pliku).
 export SZYNA_FOLDER_WYNIKOW="$SCRIPT_DIR/wyniki/wrazliwosc_transmitancji/$SZYNA_SCENARIUSZ"
+export SZYNA_ZAPISZ_CSV_SZCZEGOLOWE=0
 
-python test_wszystkie_rownolegle.py
+python testy/test_wszystkie_rownolegle.py

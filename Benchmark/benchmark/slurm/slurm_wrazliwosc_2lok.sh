@@ -9,22 +9,23 @@
 # KOSZT: zmierzone lokalnie (smoke test, 3-dniowe okno, mieszanka
 # algorytmów): ~0.15 core-min/zadanie. Przy oknie 45-dniowym (domyślne,
 # SZYNA_MAX_DNI_WRAZ) to ekstrapoluje się do ~2.25 core-min/zadanie, razem
-# ~1960 zadań (2 lokalizacje x 35 algorytmy [rejestr urósł z 29 do 35 -
+# ~1960 zadań (2 lokalizacje x 37 algorytmy [rejestr urósł z 29 do 35 -
 # dodane 3 warianty MPC + 2 algorytmy inspirowane literaturą, 2026-09-03]
 # x 14 scenariuszy x 2 warianty szumu) = ~72-108 core-h szacunkowo.
-# --cpus-per-task=48 / --time=4:00:00 = 192 core-h - bezpieczny zapas ponad
-# szacunek, NIE ślepe zgadywanie.
+# --cpus-per-task=64 / --time=4:00:00 = 256 core-h - bezpieczny zapas ponad
+# szacunek, NIE ślepe zgadywanie (64 rdzenie zamiast 48 na życzenie
+# użytkownika 2026-09-07 - ta sama praca, krótszy czas ściany).
 #
 # WAŻNE: zlecaj TYLKO przez `sbatch`, NIGDY przez `sh`/`bash` bezpośrednio.
 #
 # Uruchomienie (z katalogu Benchmark/benchmark na klastrze):
-#   sbatch slurm_wrazliwosc_2lok.sh
+#   sbatch slurm/slurm_wrazliwosc_2lok.sh
 
 #SBATCH -J szyna_wrazliwosc_2lok
 #SBATCH --account=hpc-wikjan2416-1787599067
 #SBATCH -N 1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=48
+#SBATCH --cpus-per-task=64
 #SBATCH --mem=1000G
 #SBATCH --time=4:00:00
 #SBATCH -p lem-cpu
@@ -49,5 +50,5 @@ pip install -r "$SCRIPT_DIR/requirements.txt"
 # kosztem ~3.3x dłuższego czasu.
 export SZYNA_FOLDER_WYNIKOW_WRAZ="$SCRIPT_DIR/wyniki/wrazliwosc_2lokalizacje"
 
-python test_wrazliwosc_dwie_lokalizacje.py
-python generuj_excel_wrazliwosc.py
+python testy/test_wrazliwosc_dwie_lokalizacje.py
+python generatory_excel/generuj_excel_wrazliwosc.py

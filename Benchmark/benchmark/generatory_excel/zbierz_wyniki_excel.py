@@ -18,7 +18,7 @@ import hashlib
 import os
 import zipfile
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # benchmark/ (rodzic generatory_excel/)
 FOLDER_WYNIKOW = os.path.join(BASE_DIR, "wyniki")
 FOLDER_WYJSCIOWY = os.path.join(FOLDER_WYNIKOW, "wyniki_excela")
 

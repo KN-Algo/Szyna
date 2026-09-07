@@ -30,7 +30,9 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import pandas as pd
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # benchmark/ (rodzic testy/)
+sys.path.insert(0, BASE_DIR)  # symulacja_fizyczna.py, przewidywanie_opadow.py mieszkają w benchmark/
+sys.path.insert(0, os.path.join(BASE_DIR, 'generatory_excel'))  # import generuj_excel_podsumowanie niżej
 FOLDER_POGODA = os.path.join(BASE_DIR, "Pogoda_pomiary_15_minut")
 
 # Wszystkie poniższe stałe można nadpisać zmiennymi środowiskowymi - m.in. dlatego,
@@ -115,6 +117,18 @@ PERTURBACJA_T1_PCT = float(os.environ.get('SZYNA_PERTURB_T1', '0.0'))
 PERTURBACJA_T2_PCT = float(os.environ.get('SZYNA_PERTURB_T2', '0.0'))
 PERTURBACJA_L_PCT = float(os.environ.get('SZYNA_PERTURB_L', '0.0'))
 SCENARIUSZ_ETYKIETA = os.environ.get('SZYNA_SCENARIUSZ', 'nominal')
+
+# Domyślnie WŁĄCZONE (zachowanie sprzed tej zmiany): zapis pełnej trajektorii
+# CSV per (lokalizacja, algorytm) + osobnego *_uczenie.csv dla rodziny
+# nauka_kary_* - patrz komentarze przy df_zapis.to_csv()/df_uczenie.to_csv()
+# niżej. Ustaw SZYNA_ZAPISZ_CSV_SZCZEGOLOWE=0, żeby to wyłączyć - przydatne przy
+# analizie wrażliwości transmitancji (8 scenariuszy x 44 lokalizacje x 35
+# algorytmów = tysiące plików, których i tak nie czyta ani
+# generuj_excel_podsumowanie.py (poza *_uczenie.csv - patrz tam), ani
+# generuj_excel_wrazliwosc_transmitancji.py (czyta WYŁĄCZNIE gotowe
+# Podsumowanie_wynikow.xlsx). PRZEGLAD_ZBIORCZY.csv (jedyne źródło danych do
+# obu Exceli) jest zapisywane ZAWSZE, niezależnie od tej flagi.
+ZAPISZ_CSV_SZCZEGOLOWE = os.environ.get('SZYNA_ZAPISZ_CSV_SZCZEGOLOWE', '1') != '0'
 
 # Krok symulacji/sterowania [s] - domyślnie 10s (NIE 1s): decyzja sterowania i
 # fizyka liczone są co tyle sekund zamiast co sekundę. Zweryfikowane, że przy
@@ -268,7 +282,7 @@ def przetworz_kombinacje(nazwa_lokalizacji, sciezka_csv, nazwa_algorytmu):
             # głównego CSV, bo ma inną granulację czasową - raz/dobę, nie
             # raz/krok) do zakładki "Uczenie_adaptacyjne" w Excelu.
             historia_uczenia = getattr(kontroler, 'historia_uczenia', None)
-            if historia_uczenia:
+            if historia_uczenia and ZAPISZ_CSV_SZCZEGOLOWE:
                 df_uczenie = pd.DataFrame(historia_uczenia)
                 df_uczenie.insert(0, 'algorytm', nazwa_algorytmu)
                 df_uczenie.insert(0, 'lokalizacja', nazwa_lokalizacji)
@@ -289,9 +303,10 @@ def przetworz_kombinacje(nazwa_lokalizacji, sciezka_csv, nazwa_algorytmu):
         # wrażliwości) mogły bezpiecznie współdzielić ten sam FOLDER_WYNIKOW bez
         # nadpisywania się nawzajem (domyślnie 'nominal', czyli identyczna nazwa
         # jak przed dodaniem analizy wrażliwości - zero zmian w zwykłym użyciu).
-        przedrostek = f"{nazwa_lokalizacji}_{nazwa_algorytmu}" if SCENARIUSZ_ETYKIETA == 'nominal' \
-            else f"{nazwa_lokalizacji}_{nazwa_algorytmu}_{SCENARIUSZ_ETYKIETA}"
-        df_zapis.to_csv(os.path.join(FOLDER_WYNIKOW, f"{przedrostek}.csv"), index=False)
+        if ZAPISZ_CSV_SZCZEGOLOWE:
+            przedrostek = f"{nazwa_lokalizacji}_{nazwa_algorytmu}" if SCENARIUSZ_ETYKIETA == 'nominal' \
+                else f"{nazwa_lokalizacji}_{nazwa_algorytmu}_{SCENARIUSZ_ETYKIETA}"
+            df_zapis.to_csv(os.path.join(FOLDER_WYNIKOW, f"{przedrostek}.csv"), index=False)
 
         return nazwa_lokalizacji, nazwa_algorytmu, stats, None
     except Exception:
@@ -409,6 +424,11 @@ def main():
                'srednia_moc_pct', 'godziny_ze_sniegiem', 'zabezpieczen_normy_uzytych', 'dni', 'flops_rzeczywiste',
                'iae', 'ise', 'itae', 'kara_bezpieczenstwa', 'epizody_ponizej_floor']
     kolumny = [k for k in kolumny if k in df_wszystkie.columns]
+    # Dowolne DODATKOWE kolumny spoza tej listy (np. kara_bezpieczenstwa__<scenariusz> -
+    # patrz KARA_WAGI_SCENARIUSZE w funkcja_ryzyka_wspolne.py) dopisujemy NA KOŃCU
+    # zamiast po cichu je gubić - ta lista wyżej istnieje tylko po to, żeby wymusić
+    # CZYTELNĄ KOLEJNOŚĆ znanych kolumn, nie żeby ograniczać zbiór do nich.
+    kolumny += [k for k in df_wszystkie.columns if k not in kolumny]
     df_wszystkie = df_wszystkie[kolumny]
     df_wszystkie.to_csv(os.path.join(FOLDER_WYNIKOW, "PRZEGLAD_ZBIORCZY.csv"), index=False)
 

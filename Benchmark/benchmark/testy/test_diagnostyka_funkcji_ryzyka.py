@@ -26,7 +26,7 @@
 #   SZYNA_KROK_S             - krok symulacji [s] (domyślnie 10.0)
 #   SZYNA_FOLDER_WYNIKOW_DIAG - folder wyników (domyślnie wyniki/diagnostyka_funkcji_ryzyka)
 #
-# Uruchomienie: python test_diagnostyka_funkcji_ryzyka.py
+# Uruchomienie (z katalogu Benchmark/benchmark): python testy/test_diagnostyka_funkcji_ryzyka.py
 
 import os
 import sys
@@ -36,7 +36,8 @@ from openpyxl import Workbook
 from openpyxl.chart import LineChart, Reference
 from openpyxl.styles import Font
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # benchmark/ (rodzic testy/)
+sys.path.insert(0, BASE_DIR)  # symulacja_fizyczna.py mieszka w benchmark/
 FOLDER_POGODA = os.path.join(BASE_DIR, "Pogoda_pomiary_15_minut")
 FOLDER_WYNIKOW = os.environ.get(
     'SZYNA_FOLDER_WYNIKOW_DIAG', os.path.join(BASE_DIR, "wyniki", "diagnostyka_funkcji_ryzyka"))

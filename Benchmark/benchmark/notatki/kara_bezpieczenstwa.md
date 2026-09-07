@@ -100,6 +100,33 @@ odchylenie w setkach/tysiącach procent u innych algorytmów jest natychmiast cz
 sygnałem "ten algorytm w tej pogodzie realnie łamie bezpieczeństwo normy", nie tylko
 abstrakcyjną liczbą °C·s bez punktu odniesienia.
 
+## Analiza wrażliwości wag (czy ranking jest odporny na dobór wag?)
+
+Dopisane 2026-09-07, na życzenie użytkownika (przygotowanie do publikacji - potencjalny zarzut
+recenzenta: "dlaczego akurat te wagi?"). Trzy składowe kary wyżej są ważone stałymi
+`KARA_WAGA_SNIEG_C_PER_MM`/`KARA_WAGA_MROZ_DESZCZ`/`KARA_WAGA_FLOOR`
+(`Algorytmy/funkcja_ryzyka_wspolne.py`) - CELOWO **oddzielnymi** od stałych sterujących funkcją
+ryzyka (`RISK_SNOW_PENALTY_PER_MM_C` itd.), mimo nominalnie identycznej wartości dla śniegu. Dzięki
+temu zmiana tych wag NIE wpływa na zachowanie żadnego kontrolera (kara bezpieczeństwa to metryka
+post-hoc z ground-truth trajektorii - patrz tabela na górze tej notatki) - a to z kolei pozwala policzyć
+WSZYSTKIE scenariusze wag w JEDNYM przebiegu symulacji (dodatkowe sumowanie po już policzonych
+składowych `snow_excess_mm`/`marznacy_deszcz_deficyt_c`/`floor_deficyt_c`), **bez ponownego odpalania
+fizyki/sterowania** - zero dodatkowego kosztu obliczeniowego na klastrze, w odróżnieniu od analizy
+wrażliwości transmitancji K/T1 (`notatki/wyniki_excel/`), która faktycznie WYMAGA 8 osobnych przebiegów,
+bo tam zaburzenie zmienia zachowanie regulatora.
+
+`KARA_WAGI_SCENARIUSZE` definiuje 6 scenariuszy - każdy zaburza JEDNĄ z trzech wag o ±50% względem
+nominalnej (pozostałe dwie bez zmian): `snieg_x0.5`, `snieg_x2`, `mroz_x0.5`, `mroz_x2`, `floor_x0.5`,
+`floor_x2`. Wyniki trafiają do `stats['kara_bezpieczenstwa__<etykieta>']` obok wariantu nominalnego.
+
+**W Excelu**: nowa zakładka **"Wrazliwosc_wag_kary"** (pomijana bez błędu, gdy dane pochodzą sprzed tej
+zmiany) - tabela: 1 wiersz na algorytm, kolumny = średnia kara + ranga dla wariantu nominalnego, potem
+średnia kara + Δ ranga (zmiana pozycji względem rankingu nominalnego) dla każdego z 6 scenariuszy, oraz
+na dole korelacja rang Spearmana każdego scenariusza względem rankingu nominalnego (blisko 1.0 = ranking
+odporny na dobór tej wagi). To narzędzie WERYFIKACJI odporności, nie samodzielny wynik do publikacji -
+surowe wartości wag NIE są celem tej analizy (użytkownik: "nie zamierzałem dawać do wyników za bardzo
+tych współczynników, chyba że ktoś naprawdę je chce").
+
 ## Zaobserwowany przykład (smoke test, Ojmiakon, 5 dni)
 
 Rodzina `fuzzy_logic_*`/`fuzzy_normy_*` (stały cel 3°C, BEZ priorytetu ochrony przed floorem, jaki ma

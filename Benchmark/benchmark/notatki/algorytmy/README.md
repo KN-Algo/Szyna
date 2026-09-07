@@ -1,6 +1,6 @@
 # Notatki per algorytm
 
-Jeden plik `.md` na każdy z 32 algorytmów zarejestrowanych w `Algorytmy/rejestr_algorytmow.py`
+Jeden plik `.md` na każdy z 37 algorytmów zarejestrowanych w `Algorytmy/rejestr_algorytmow.py`
 (`ALGORYTMY` dict) — opisuje jak dany algorytm liczy setpoint/moc, czym różni się od najbliższego
 "rodzeństwa", jakie ma własne stałe, i szacunek FLOPs/krok (pełny mechanizm liczenia FLOPs:
 [../FLOPs.md](../FLOPs.md)).
@@ -29,6 +29,8 @@ plik/klasa/metoda/typ/cel/adaptacyjny/bezpiecznik, sekcja "Jak działa", sekcja 
 - [risk_function](risk_function.md) — histereza binarna
 - [risk_function_pid](risk_function_pid.md) — PID adaptacyjny (autotest + SIMC + cyfrowy bliźniak)
 - [risk_function_pid_auto](risk_function_pid_auto.md) — jak wyżej + automatyczne strojenie progów setpointu ("perturb-and-observe", realna implementacja propozycji)
+- [risk_function_ladrc](adrc.md) — liniowe ADRC (Gao 2003, Extended State Observer) zamiast PID
+- [risk_function_nadrc](adrc.md) — nieliniowe ADRC (Han 2009, funkcja fal()) zamiast PID
 - [fuzzy_ryzyko_1](fuzzy_ryzyko_1.md) / [_2](fuzzy_ryzyko_2.md) / [_2v2](fuzzy_ryzyko_2v2.md) / [_3](fuzzy_ryzyko_3.md)
 
 ## Cel z funkcji ryzyka + prognoza opadu (przewidywanie_opadow.py)

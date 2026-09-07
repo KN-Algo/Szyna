@@ -14,7 +14,7 @@
 # awarię czujnika: rzeczywistość dalej się dzieje normalnie, tylko sterownik
 # o niej nie wie i podejmuje decyzje na złych danych.
 #
-# Uruchomienie: python test_awarie_czujnikow.py
+# Uruchomienie (z katalogu Benchmark/benchmark): python testy/test_awarie_czujnikow.py
 # Sterowanie (te same konwencje co test_wszystkie_rownolegle.py):
 #   SZYNA_LOKALIZACJA_AWARIE   - która lokalizacja (domyślnie abisko_60min_2025)
 #   SZYNA_MAX_DNI_AWARIE       - ile dni okna (domyślnie 10 - wystarczy, żeby
@@ -32,7 +32,9 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 import numpy as np
 import pandas as pd
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # benchmark/ (rodzic testy/)
+sys.path.insert(0, BASE_DIR)  # symulacja_fizyczna.py mieszka w benchmark/
+sys.path.insert(0, os.path.join(BASE_DIR, 'generatory_excel'))  # import generuj_excel_awarie niżej
 FOLDER_POGODA = os.path.join(BASE_DIR, "Pogoda_pomiary_15_minut")
 FOLDER_WYNIKOW = os.environ.get(
     'SZYNA_FOLDER_WYNIKOW_AWARIE', os.path.join(BASE_DIR, "wyniki", "awarie_czujnikow"))
@@ -234,6 +236,11 @@ def main():
                    'max_lod_mm', 'max_hrt', 'min_hrt', 'srednia_moc_pct', 'flops_rzeczywiste',
                    'iae', 'ise', 'itae', 'kara_bezpieczenstwa', 'epizody_ponizej_floor']
         kolumny = [k for k in kolumny if k in df.columns]
+        # Dowolne DODATKOWE kolumny spoza tej listy (np. kara_bezpieczenstwa__<scenariusz> -
+        # patrz KARA_WAGI_SCENARIUSZE w funkcja_ryzyka_wspolne.py) dopisujemy NA KOŃCU
+        # zamiast po cichu je gubić - ta lista wyżej istnieje tylko po to, żeby wymusić
+        # CZYTELNĄ KOLEJNOŚĆ znanych kolumn, nie żeby ograniczać zbiór do nich.
+        kolumny += [k for k in df.columns if k not in kolumny]
         df = df[kolumny]
         sciezka_csv = os.path.join(FOLDER_WYNIKOW, "AWARIE_ZBIORCZY.csv")
         df.to_csv(sciezka_csv, index=False)

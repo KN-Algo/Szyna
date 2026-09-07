@@ -606,6 +606,39 @@ ALGORYTMY = {
         'zlozonosc_pamieciowa': 'O(1) (bufor kroczący dziedziczony z KontrolerBazowy, nieużywany do prognozy)',
         'pamiec_przyblizona_mb': 0.5,
     },
+    'risk_function_ladrc': {
+        'modul': 'funkcja_ryzyka_ladrc',
+        'klasa': 'KontrolerRyzykaLADRC',
+        'metoda': 'risk_function_ladrc',
+        'opis': 'Jak risk_function_pid, ale regulacja wokół celu przez LINIOWE ADRC (Gao 2003 - Extended State '
+                'Observer + liniowe prawo sterowania, "bandwidth-parameterization") zamiast PI - '
+                'funkcja_ryzyka_ladrc.py, funkcja_ryzyka_adrc_wspolne.py.',
+        'bezpiecznik': True,
+        'typ': 'ADRC (liniowy, ESO 2-stanowy)',
+        'cel': 'Funkcja ryzyka (Kalman)',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) amortyzowane, skok co 300 kroków (Kalman + cyfrowy bliźniak 7200 kroków)',
+        'flops_na_krok': 455,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu',
+        'pamiec_przyblizona_mb': 21.0,
+    },
+    'risk_function_nadrc': {
+        'modul': 'funkcja_ryzyka_nadrc',
+        'klasa': 'KontrolerRyzykaNADRC',
+        'metoda': 'risk_function_nadrc',
+        'opis': 'Jak risk_function_ladrc, ale NIELINIOWE ADRC (Han 2009 - oryginalna wersja z funkcją fal() w '
+                'obserwatorze i prawie sterowania) zamiast liniowego - łagodniejszy przyrost mocy przy dużych '
+                'błędach/skokach, skalibrowany tak, by w wąskiej strefie liniowej pokrywać się z LADRC - '
+                'funkcja_ryzyka_nadrc.py, funkcja_ryzyka_adrc_wspolne.py.',
+        'bezpiecznik': True,
+        'typ': 'ADRC (nieliniowy, fal(), ESO 2-stanowy)',
+        'cel': 'Funkcja ryzyka (Kalman)',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) amortyzowane, skok co 300 kroków (Kalman + cyfrowy bliźniak 7200 kroków)',
+        'flops_na_krok': 465,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu',
+        'pamiec_przyblizona_mb': 21.0,
+    },
     'predykcja_wygladzanie_prosta': {
         'modul': 'predykcja_wygladzanie_prosta',
         'klasa': 'KontrolerPredykcjaWygladzanie',

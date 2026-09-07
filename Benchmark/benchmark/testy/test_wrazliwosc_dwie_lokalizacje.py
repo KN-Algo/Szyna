@@ -59,7 +59,7 @@
 #   SZYNA_WZNOW                 - wznawianie przerwanego przebiegu (domyślnie 1)
 #   SZYNA_SCENARIUSZE_WRAZ      - filtr nazw scenariuszy (przecinki), domyślnie wszystkie 14
 #
-# Uruchomienie: python test_wrazliwosc_dwie_lokalizacje.py
+# Uruchomienie (z katalogu Benchmark/benchmark): python testy/test_wrazliwosc_dwie_lokalizacje.py
 
 import os
 import sys
@@ -70,7 +70,8 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 import numpy as np
 import pandas as pd
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # benchmark/ (rodzic testy/)
+sys.path.insert(0, BASE_DIR)  # symulacja_fizyczna.py mieszka w benchmark/
 FOLDER_POGODA = os.path.join(BASE_DIR, "Pogoda_pomiary_15_minut")
 FOLDER_WYNIKOW = os.environ.get(
     'SZYNA_FOLDER_WYNIKOW_WRAZ', os.path.join(BASE_DIR, "wyniki", "wrazliwosc_2lokalizacje"))
@@ -315,7 +316,7 @@ def main():
             print(f"  - {etykieta}")
 
     print(f"\nGotowe. Wyniki w: {sciezka_zbiorczy}")
-    print("Uruchom generuj_excel_wrazliwosc.py, żeby zbudować podsumowanie Excel.")
+    print("Uruchom generatory_excel/generuj_excel_wrazliwosc.py, żeby zbudować podsumowanie Excel.")
 
 
 if __name__ == '__main__':

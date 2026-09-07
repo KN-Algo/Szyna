@@ -19,16 +19,20 @@
 # ==============================================================================
 
 import os
+import sys
 import pandas as pd
 import matplotlib
 matplotlib.use('Agg')  # generujemy pliki PNG - nie wymaga interaktywnego okna
 import matplotlib.pyplot as plt
 
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # benchmark/ (rodzic testy/)
+sys.path.insert(0, BASE_DIR)  # symulacja_fizyczna.py mieszka w benchmark/
+sys.path.insert(0, os.path.join(BASE_DIR, 'Algorytmy'))
+
 import symulacja_fizyczna as fiz
 from rejestr_algorytmow import ALGORYTMY, stworz_kontroler, podlega_bezpiecznikowi
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-NAZWA_PLIKU_CSV = os.path.join(BASE_DIR, "Pogoda_pomiary_15_minut", "suwalki_15min_2023.csv")
+NAZWA_PLIKU_CSV = os.path.join(BASE_DIR, "Pogoda_pomiary_15_minut", "suwalki_60min_2025.csv")
 FOLDER_WYNIKOW = os.path.join(BASE_DIR, "wyniki")
 os.makedirs(FOLDER_WYNIKOW, exist_ok=True)
 

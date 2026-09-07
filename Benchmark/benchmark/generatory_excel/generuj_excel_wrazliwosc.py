@@ -8,7 +8,7 @@
 #   - "Jakosc_autotestu"  - błąd identyfikacji K/T1/L (%) dla algorytmów adaptacyjnych, osobno z/bez szumu
 #
 # Uruchomienie:
-#   python generuj_excel_wrazliwosc.py
+#   python generatory_excel/generuj_excel_wrazliwosc.py
 # albo programowo: generuj_excel_wrazliwosc.main(sciezka_csv, sciezka_xlsx)
 
 import os
@@ -18,7 +18,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.formatting.rule import ColorScaleRule
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # benchmark/ (rodzic generatory_excel/)
 FOLDER_WYNIKOW = os.environ.get(
     'SZYNA_FOLDER_WYNIKOW_WRAZ', os.path.join(BASE_DIR, "wyniki", "wrazliwosc_2lokalizacje"))
 SCIEZKA_CSV_DOMYSLNA = os.path.join(FOLDER_WYNIKOW, "WRAZLIWOSC_ZBIORCZY.csv")

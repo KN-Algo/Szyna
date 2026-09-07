@@ -38,7 +38,7 @@
 #   SZYNA_FOLDER_WYNIKOW_SZUM     - folder wyników (domyślnie wyniki/szum_wielu_czujnikow)
 #   SZYNA_WZNOW                   - wznawianie (domyślnie 1)
 #
-# Uruchomienie: python test_szum_wielu_czujnikow.py
+# Uruchomienie (z katalogu Benchmark/benchmark): python testy/test_szum_wielu_czujnikow.py
 
 import os
 import random
@@ -50,7 +50,8 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 import numpy as np
 import pandas as pd
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # benchmark/ (rodzic testy/)
+sys.path.insert(0, BASE_DIR)  # symulacja_fizyczna.py mieszka w benchmark/
 FOLDER_POGODA = os.path.join(BASE_DIR, "Pogoda_pomiary_15_minut")
 FOLDER_WYNIKOW = os.environ.get(
     'SZYNA_FOLDER_WYNIKOW_SZUM', os.path.join(BASE_DIR, "wyniki", "szum_wielu_czujnikow"))

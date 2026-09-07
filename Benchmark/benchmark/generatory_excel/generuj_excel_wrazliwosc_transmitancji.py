@@ -10,7 +10,7 @@
 # już wyekstrahowane z zipów przesłanych przez użytkownika z klastra. Jeśli w przyszłości
 # doda się nowy scenariusz/nowy plik, wystarczy dopisać go do SCENARIUSZE niżej.
 #
-# Uruchomienie: python generuj_excel_wrazliwosc_transmitancji.py
+# Uruchomienie (z katalogu Benchmark/benchmark): python generatory_excel/generuj_excel_wrazliwosc_transmitancji.py
 
 import os
 import pandas as pd
@@ -19,7 +19,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.formatting.rule import ColorScaleRule
 from openpyxl.utils import get_column_letter
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # benchmark/ (rodzic generatory_excel/)
 FOLDER_EXCELA = os.path.join(BASE_DIR, "wyniki", "wyniki_excela")
 SCIEZKA_WYJSCIOWA = os.path.join(FOLDER_EXCELA, "Podsumowanie_wrazliwosc_transmitancji_WSZYSTKIE.xlsx")
 

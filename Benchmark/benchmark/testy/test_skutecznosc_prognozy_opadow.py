@@ -35,7 +35,7 @@
 #   - "Definicje_poziomow"  - progi definiujące poziomy intensywności 0-3
 #
 # Uruchomienie (z katalogu Benchmark/benchmark):
-#   python test_skutecznosc_prognozy_opadow.py
+#   python testy/test_skutecznosc_prognozy_opadow.py
 
 import os
 import re
@@ -50,9 +50,11 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.formatting.rule import ColorScaleRule
 from openpyxl.chart import LineChart, Reference
 
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # benchmark/ (rodzic testy/)
+sys.path.insert(0, BASE_DIR)  # przewidywanie_opadow.py mieszka w benchmark/
+
 from przewidywanie_opadow import przewidywanie_opadow as PrzewidywanieOpadow
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FOLDER_POGODA = os.path.join(BASE_DIR, 'Pogoda_pomiary_15_minut')
 FOLDER_WYNIKOW = os.path.join(BASE_DIR, 'wyniki')
 SCIEZKA_XLSX = os.path.join(FOLDER_WYNIKOW, 'Podsumowanie_prognozy_opadow.xlsx')

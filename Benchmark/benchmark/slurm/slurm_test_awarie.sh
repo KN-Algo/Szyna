@@ -8,7 +8,7 @@
 # WAŻNE: zlecaj TYLKO przez `sbatch`, NIGDY przez `sh`/`bash` bezpośrednio.
 #
 # Uruchomienie (z katalogu Benchmark/benchmark na klastrze):
-#   sbatch slurm_test_awarie.sh
+#   sbatch slurm/slurm_test_awarie.sh
 
 #SBATCH -J szyna_test_awarie
 #SBATCH --account=hpc-wikjan2416-1787599067
@@ -32,4 +32,4 @@ source "$HOME/szyna_venv/bin/activate"
 pip install --upgrade pip
 pip install -r "$SCRIPT_DIR/requirements.txt"
 
-python test_awarie_czujnikow.py
+python testy/test_awarie_czujnikow.py

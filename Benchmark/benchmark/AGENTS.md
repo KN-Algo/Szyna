@@ -62,15 +62,17 @@ zachowaniu wymaganego poziomu bezpieczeństwa (norma jako twardy wyznacznik).
     Opisy_algorytmow, Zlozonosc_obliczeniowa, Wnioski). Wywoływane
     automatycznie na końcu `test_wszystkie_rownolegle.py`.
 
-## Zbiór algorytmów (32 sztuk, w `rejestr_algorytmow.ALGORYTMY`)
+## Zbiór algorytmów (37 sztuk, w `rejestr_algorytmow.ALGORYTMY`)
 
 Rodziny: automat/histereza wg normy (2, + wariant górski `compute_control_gorski`
-= 3), funkcja ryzyka binarna/PID (2) + ich warianty `_opad` (2), PID/fuzzy do
-progów normy (5), fuzzy logic "surowy" wokół stałego celu (4), fuzzy + funkcja
-ryzyka (4) + ich warianty `_opad` (4), uczenie adaptacyjne z kar `nauka_kary*`
-(5 — bazowy + temp/opad/bliźniak/ryzyko), MPC (2 — `mpc_liniowy`/
-`mpc_prognoza_pogody`, patrz sekcja "MPC (regulator predykcyjny)" niżej).
-Dokładne opisy typu/celu/adaptacyjności — patrz zakładka "Opisy_algorytmow" w
+= 3), funkcja ryzyka binarna/PID/LADRC/NADRC (4, patrz `notatki/algorytmy/adrc.md`)
++ ich warianty `_opad` (2 — binarna/PID), PID/fuzzy do progów normy (5), fuzzy
+logic "surowy" wokół stałego celu (4), fuzzy + funkcja ryzyka (4) + ich warianty
+`_opad` (4), uczenie adaptacyjne z kar `nauka_kary*` (5 — bazowy + temp/opad/
+bliźniak/ryzyko), MPC (3 — `mpc_liniowy`/`mpc_prognoza_pogody`/
+`mpc_miekkie_ograniczenia`, patrz sekcja "MPC (regulator predykcyjny)" niżej),
+inspirowane literaturą (2 — `histereza_pamiec_rosy`/`predykcja_wygladzanie_prosta`,
+Chiaradonna i in. 2021). Dokładne opisy typu/celu/adaptacyjności — patrz zakładka "Opisy_algorytmow" w
 Excelu albo bezpośrednio `rejestr_algorytmow.py`. Opis DZIAŁANIA każdego
 algorytmu z osobna (bardziej szczegółowy niż jednolinijkowy `opis` w
 rejestrze) — patrz `notatki/algorytmy/*.md` (jeden plik na algorytm,
@@ -575,6 +577,53 @@ odpala się dopiero przy przekroczeniu 2x limitu SENSOR_HISTORY_MAX_SAMPLES).
       ten typ ryzyka, którego IAE/ISE/ITAE NIE wykrywa (te algorytmy trzymają
       się SWOJEGO celu nieźle, problem w samym celu). Patrz
       `notatki/kara_bezpieczenstwa.md` po pełny opis z przykładem.
+- [x] **Analiza wrażliwości WAG kary bezpieczeństwa (nowa zakładka "Wrazliwosc_wag_kary")**
+      (2026-09-07, na życzenie użytkownika - przygotowanie do publikacji: "dlaczego akurat
+      te wagi?"). Trzy wagi (`KARA_WAGA_SNIEG_C_PER_MM`/`KARA_WAGA_MROZ_DESZCZ`/`KARA_WAGA_FLOOR`
+      w `funkcja_ryzyka_wspolne.py`) CELOWO wydzielone jako stałe NIEZALEŻNE od tych sterujących
+      funkcją ryzyka (mimo nominalnie identycznej wartości dla śniegu) - dzięki temu 6
+      scenariuszy (±50% na jednej wadze na raz, `KARA_WAGI_SCENARIUSZE`) liczy się RÓWNOLEGLE z
+      wariantem nominalnym W TYM SAMYM przebiegu symulacji, BEZ ponownej symulacji fizyki (w
+      odróżnieniu od testu wrażliwości transmitancji K/T1, który faktycznie wymaga 8 osobnych
+      przebiegów, bo tam zaburzenie zmienia zachowanie regulatora). Nowa zakładka pokazuje ranking
+      algorytmów wg kary + Δ rangi per scenariusz + korelację Spearmana (odporność rankingu).
+      Przy okazji naprawiony realny bug: finalny zapis `PRZEGLAD_ZBIORCZY.csv` w
+      `test_wszystkie_rownolegle.py`/`test_wszystkie_algorytmy_wszystkie_lokalizacje.py`/
+      `test_awarie_czujnikow.py` miał TWARDĄ listę znanych kolumn i PO CICHU gubił każdą kolumnę
+      spoza niej (więc te 6 nowych kolumn ginęłoby bez śladu i bez błędu) - teraz dopisuje
+      nieznane kolumny na końcu zamiast je odrzucać. Też dodany `SZYNA_ZAPISZ_CSV_SZCZEGOLOWE=0`
+      w `slurm_wrazliwosc_transmitancji.sh` (na życzenie użytkownika - "nie generuj mi masy CSV") -
+      wyłącza zapis pełnej trajektorii per (lokalizacja, algorytm) [+ *_uczenie.csv] dla testu
+      transmitancji (8x44x35 = tysiące zbędnych plików, nieużywanych przez żaden generator Excela,
+      PRZEGLAD_ZBIORCZY.csv zapisywany zawsze). Patrz `notatki/kara_bezpieczenstwa.md` (sekcja
+      "Analiza wrażliwości wag").
+- [x] **2 nowe algorytmy: ADRC liniowy i nieliniowy (`risk_function_ladrc`/
+      `risk_function_nadrc`, rejestr 35→37)** (2026-09-07, na życzenie
+      użytkownika - "dodaj algorytm ADCR i różne jego warianty", potwierdzone
+      jako ADRC/Active Disturbance Rejection Control). Ta sama logika
+      wyznaczania celu co `risk_function_pid` (`_evaluate_risk_setpoint`) -
+      różnica WYŁĄCZNIE w regulacji wokół celu: Extended State Observer (ESO,
+      2-stanowy: estymata HRT + estymata "całkowitego zakłócenia") zamiast
+      całkowania błędu (PI). LADRC = liniowy (Gao 2003, bandwidth-parameterization,
+      2 parametry pasma omega_c/omega_o=5x omega_c), NADRC = nieliniowy (Han
+      2009, funkcja fal() w obserwatorze i prawie sterowania, skalibrowana
+      żeby w wąskiej strefie liniowej pokrywać się z LADRC). Oba robią ten sam
+      autotest startowy co risk_function_pid i wyliczają parametry z
+      identyfikacji SOPDT (K/T1/T2/L) - patrz `wylicz_parametry_adrc` w
+      `funkcja_ryzyka_adrc_wspolne.py`. **Złapany i naprawiony błąd skalowania
+      przy weryfikacji** (smoke test): pierwsza wersja miała `b0=K/tau` bez
+      podziału przez 100 - ponieważ cyfrowy bliźniak (`rdzen_kontrolera.
+      _krok_modelu`) operuje na `u=moc_procent/100` (frakcja 0-1), a
+      kontrolery ADRC na `moc_procent` (0-100), sterowanie wychodziło ~100x za
+      słabe: HRT schodziło do -18...-20°C (norma: -9.2°C) zamiast trzymać się
+      w okolicy pozostałych algorytmów. Po poprawce (`b0=K/(100*tau)`):
+      min HRT -12.1...-12.4°C, energia 1319-1455 kWh - porównywalne z
+      risk_function_pid (1223 kWh, min HRT -12.9°C). Patrz
+      `notatki/algorytmy/adrc.md` po pełny opis, w tym obserwację, że kara
+      bezpieczeństwa obu wariantów ADRC jest wciąż wyraźnie wyższa niż PID
+      mimo podobnego min HRT (dłuższy czas w strefie zagrożenia, nie głębsze
+      minimum) - niewytłumaczone/niedostrojone dalej w tej sesji, ciekawy
+      punkt do analizy porównawczej.
 - [x] **`notatki/wyniki_excel/` - jak czytać każdy plik Excela z wynikami**
       (2026-09-03, na życzenie użytkownika) - jeden plik notatki NA KAŻDY z 8
       generatorów Excela w projekcie (`podsumowanie_wynikow.md`,
@@ -740,9 +789,10 @@ odpala się dopiero przy przekroczeniu 2x limitu SENSOR_HISTORY_MAX_SAMPLES).
 
 ## Orkiestracja wszystkich zadań SLURM naraz
 
-`uruchom_wszystko.sh` (zwykły skrypt bash, NIE sbatch - uruchamiany bezpośrednio
-`bash uruchom_wszystko.sh`) zleca WSZYSTKIE 7 zadań naraz w łańcuchu zależności
-SLURM (`sbatch --dependency=afterok:<job_id>`): smoke_test -> pelny_przeglad ->
+`slurm/uruchom_wszystko.sh` (zwykły skrypt bash, NIE sbatch - uruchamiany
+bezpośrednio `bash slurm/uruchom_wszystko.sh`, Z KATALOGU Benchmark/benchmark)
+zleca WSZYSTKIE 7 zadań naraz w łańcuchu zależności SLURM
+(`sbatch --dependency=afterok:<job_id>`): smoke_test -> pelny_przeglad ->
 wrazliwosc_transmitancji -> wrazliwosc_2lok -> krok_sterowania ->
 szum_wielu_czujnikow -> test_awarie, sekwencyjnie (nie równolegle - żeby nie
 mnożyć jednoczesnej rezerwacji CPU-godzin i nie trafić znów na
@@ -753,11 +803,29 @@ zero ręcznej interwencji potrzebnej między zadaniami. Rozszerzone 2026-09-02 o
 dodatek): `slurm_wrazliwosc_2lok.sh` (~60-90 core-h szacunkowo),
 `slurm_krok_sterowania.sh` (~14 core-h szacunkowo, NOWY - wcześniej ten test
 nie miał sbatch scriptu wcale), `slurm_szum_wielu_czujnikow.sh` (~135 core-h
-szacunkowo). Po zakończeniu WSZYSTKICH zadań: `python generuj_excel_master.py`
-(patrz generuj_excel_master.py) buduje JEDEN skonsolidowany
+szacunkowo). Po zakończeniu WSZYSTKICH zadań:
+`python generatory_excel/generuj_excel_master.py` (patrz
+`generatory_excel/generuj_excel_master.py`) buduje JEDEN skonsolidowany
 `wyniki/Podsumowanie_MASTER.xlsx` ze wszystkich wyników naraz - działa też
 bezpośrednio na klastrze, nie tylko lokalnie (pomija bez błędu zadania, które
 jeszcze nie mają wyników).
+
+**Reorganizacja katalogu (2026-09-07, na życzenie użytkownika - "posegreguj
+całość")**: wszystkie `.sh` (7x `slurm_*.sh` + `uruchom_wszystko.sh` +
+`wznow_od_transmitancji.sh`) przeniesione do `slurm/`; wszystkie
+`generuj_excel_*.py`/`zbierz_wyniki_excel.py` do `generatory_excel/`; wszystkie
+`test_*.py`/`uruchom_wszystkie_testy.py` do `testy/`. `symulacja_fizyczna.py`,
+`przewidywanie_opadow.py`, `Algorytmy/`, `notatki/`, `wyniki/` i foldery
+pogodowe/danych zostały w `benchmark/` bez zmian. Każdy przeniesiony plik ma
+poprawiony `BASE_DIR` (o jeden poziom w górę, z powrotem do `benchmark/`) i
+jawne `sys.path.insert` dla katalogów, z których importuje - zweryfikowane
+end-to-end (smoke test test_wszystkie_rownolegle.py, regeneracja Excela z
+realnych danych klastra, pełny przebieg test_awarie_czujnikow.py z jego
+generatorem). WAŻNE dla dalszej pracy: `sbatch`/`bash` na skrypty w `slurm/`
+zlecaj ZAWSZE z katalogu `benchmark/` (np. `sbatch slurm/slurm_pelny_przeglad.sh`),
+NIE z wnętrza `slurm/` - `SLURM_SUBMIT_DIR` (i tym samym `cd` w środku każdego
+skryptu) odpowiada katalogowi, z którego wywołano `sbatch`/`bash`, nie
+katalogowi samego pliku .sh.
 
 ## Pełna weryfikacja przed wdrożeniem na klaster (2026-08-27)
 

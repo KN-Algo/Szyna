@@ -30,7 +30,8 @@ from snowclim_physical_model import SnowClimPhysicalModel  # noqa: E402
 # i notatki/kara_bezpieczenstwa.md) - reeksport z funkcja_ryzyka_wspolne.py,
 # żeby nie duplikować tych samych liczb w dwóch miejscach (jedno źródło prawdy).
 from funkcja_ryzyka_wspolne import (  # noqa: E402
-    RISK_SNOW_LINGER_THRESHOLD_MM, RISK_SNOW_PENALTY_PER_MM_C, RISK_HRT_ABSOLUTE_FLOOR_C,
+    RISK_SNOW_LINGER_THRESHOLD_MM, RISK_HRT_ABSOLUTE_FLOOR_C,
+    KARA_WAGA_SNIEG_C_PER_MM, KARA_WAGA_MROZ_DESZCZ, KARA_WAGA_FLOOR, KARA_WAGI_SCENARIUSZE,
 )
 
 SUWALKI_LATITUDE_DEG = 54.1
@@ -322,11 +323,17 @@ def uruchom_kontroler(name, controller, method_name, df_1s, hrt_weather_all,
     kara_bezpieczenstwa_suma = 0.0
     epizody_ponizej_floor = 0
     byl_ponizej_floor = False
+    # Analiza wrażliwości wag kary bezpieczeństwa (patrz KARA_WAGI_SCENARIUSZE w
+    # funkcja_ryzyka_wspolne.py) - te same trzy składowe (snow_excess_mm/
+    # marznacy_deszcz_deficyt_c/floor_deficyt_c), tylko z innymi mnożnikami -
+    # liczone RÓWNOLEGLE z wariantem nominalnym w tej samej pętli, więc bez
+    # żadnego dodatkowego kosztu ponownej symulacji fizyki.
+    kara_bezpieczenstwa_scenariusze = {etykieta: 0.0 for etykieta in KARA_WAGI_SCENARIUSZE}
 
     # --- JAKOŚĆ REGULACJI (IAE/ISE/ITAE) - patrz notatki/IAE_ISE_ITAE.md po
     # pełny opis z przykładami. Liczone TYLKO na krokach, w których kontroler
     # zwrócił diagnostykę z 'target_temperature' ORAZ 'need_heat' True (czyli
-    # faktycznie DĄŻY do jakiegoś celu) - WSZYSTKIE 35 algorytmy mają teraz
+    # faktycznie DĄŻY do jakiegoś celu) - WSZYSTKIE 37 algorytmy mają teraz
     # taką diagnostykę (2026-09-02: nawet compute_control*/algorytm_z_normy -
     # cel = próg wyłączenia aktywnej gałęzi gdy grzeją; fuzzy_logic_* -
     # cel = ich stały T_ZADANA), więc pola te są None w stats TYLKO gdyby
@@ -460,15 +467,22 @@ def uruchom_kontroler(name, controller, method_name, df_1s, hrt_weather_all,
         hist_snow_1s[index] = snow_val
 
         # Trzy składowe kary bezpieczeństwa (aktywna tylko gdy przekroczony
-        # odpowiedni próg), każda przeliczona na °C-ekwiwalent i CAŁKOWANA po
-        # czasie (jak IAE) - dłuższe/głębsze naruszenie waży więcej:
+        # odpowiedni próg), każda przeliczona na °C-ekwiwalent, WAŻONA przez
+        # KARA_WAGA_* (patrz funkcja_ryzyka_wspolne.py - CELOWO niezależne od
+        # stałych sterujących funkcji ryzyka) i CAŁKOWANA po czasie (jak IAE) -
+        # dłuższe/głębsze naruszenie waży więcej:
         #   1) Zalegający śnieg powyżej RISK_SNOW_LINGER_THRESHOLD_MM (próg
         #      WSPÓLNY z funkcja_ryzyka_wspolne.py) - nadmiar w mm przeliczony
-        #      na °C-ekwiwalent przez RISK_SNOW_PENALTY_PER_MM_C (TA SAMA
-        #      konwersja, której funkcja ryzyka już używa do kary za śnieg).
+        #      na °C-ekwiwalent przez KARA_WAGA_SNIEG_C_PER_MM (nominalnie ta
+        #      sama wartość co RISK_SNOW_PENALTY_PER_MM_C, ale osobna stała).
         #   2) Marznący deszcz (opad + CRT lub AT <= 1°C, definicja jak w
         #      _evaluate_risk_setpoint) PODCZAS gdy HRT wciąż < +2°C - deficyt.
         #   3) HRT poniżej bezwzględnego dolnego limitu normy (-10°C) - deficyt.
+        #
+        # Poniżej liczymy RÓWNOLEGLE wariant nominalny + KARA_WAGI_SCENARIUSZE
+        # (analiza wrażliwości na dobór wag +/-50% - patrz notatki/kara_bezpieczenstwa.md) -
+        # to działa BEZ ponownej symulacji fizyki, bo kara bezpieczeństwa jest
+        # metryką post-hoc z ground-truth trajektorii, nie wejściem sterowania.
         snow_excess_mm = max(0.0, snow_mm - RISK_SNOW_LINGER_THRESHOLD_MM)
         is_raining_prawdziwy = rain_val > 0.0001
         is_freezing_rain_prawdziwy = is_raining_prawdziwy and (current_crt <= 1.0 or at_temp <= 1.0)
@@ -476,8 +490,16 @@ def uruchom_kontroler(name, controller, method_name, df_1s, hrt_weather_all,
         floor_deficyt_c = max(0.0, RISK_HRT_ABSOLUTE_FLOOR_C - current_hrt)
 
         kara_bezpieczenstwa_suma += dt * (
-            snow_excess_mm * RISK_SNOW_PENALTY_PER_MM_C + marznacy_deszcz_deficyt_c + floor_deficyt_c
+            snow_excess_mm * KARA_WAGA_SNIEG_C_PER_MM
+            + marznacy_deszcz_deficyt_c * KARA_WAGA_MROZ_DESZCZ
+            + floor_deficyt_c * KARA_WAGA_FLOOR
         )
+        for etykieta, (m_snieg, m_mroz, m_floor) in KARA_WAGI_SCENARIUSZE.items():
+            kara_bezpieczenstwa_scenariusze[etykieta] += dt * (
+                snow_excess_mm * KARA_WAGA_SNIEG_C_PER_MM * m_snieg
+                + marznacy_deszcz_deficyt_c * KARA_WAGA_MROZ_DESZCZ * m_mroz
+                + floor_deficyt_c * KARA_WAGA_FLOOR * m_floor
+            )
         ponizej_floor_teraz = current_hrt < RISK_HRT_ABSOLUTE_FLOOR_C
         if ponizej_floor_teraz and not byl_ponizej_floor:
             epizody_ponizej_floor += 1
@@ -527,7 +549,7 @@ def uruchom_kontroler(name, controller, method_name, df_1s, hrt_weather_all,
         # Rzeczywiście zmierzona liczba FLOPs wykonanych PRZEZ TEN kontroler w
         # TYM przebiegu (patrz rdzen_kontrolera.KontrolerBazowy._dodaj_flopy) -
         # None dla kontrolerów bez tego licznika (nie powinno się zdarzyć,
-        # wszystkie 35 algorytmy go mają, ale getattr na wszelki wypadek).
+        # wszystkie 37 algorytmy go mają, ale getattr na wszelki wypadek).
         'flops_rzeczywiste': getattr(controller, '_flops_licznik', None),
         # --- Jakość regulacji (patrz notatki/IAE_ISE_ITAE.md) - None tylko,
         # gdy w CAŁYM przebiegu nigdy nie wystąpił krok z need_heat=True
@@ -539,6 +561,10 @@ def uruchom_kontroler(name, controller, method_name, df_1s, hrt_weather_all,
         'kara_bezpieczenstwa': kara_bezpieczenstwa_suma,
         'epizody_ponizej_floor': epizody_ponizej_floor,
     }
+    # Analiza wrażliwości wag kary bezpieczeństwa - jedna dodatkowa kolumna na
+    # scenariusz (patrz KARA_WAGI_SCENARIUSZE), prefiks 'kara_bezpieczenstwa__'.
+    for etykieta, wartosc in kara_bezpieczenstwa_scenariusze.items():
+        stats[f'kara_bezpieczenstwa__{etykieta}'] = wartosc
     if print_progress and snow_reference_mm is not None:
         print(f"  Bezpiecznik parytetu ze śniegiem z normy zadziałał {zabezpieczen_uzytych} razy.")
 

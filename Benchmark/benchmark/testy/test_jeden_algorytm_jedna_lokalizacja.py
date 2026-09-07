@@ -15,6 +15,7 @@
 # ==============================================================================
 
 import os
+import sys
 import pandas as pd
 import numpy as np
 import matplotlib
@@ -23,6 +24,10 @@ from matplotlib.widgets import Slider, Button
 import matplotlib.gridspec as gridspec
 
 matplotlib.use('TkAgg')  # interaktywne okno GUI
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # benchmark/ (rodzic testy/)
+sys.path.insert(0, BASE_DIR)  # symulacja_fizyczna.py mieszka w benchmark/
+sys.path.insert(0, os.path.join(BASE_DIR, 'Algorytmy'))
 
 import symulacja_fizyczna as fiz
 from rejestr_algorytmow import ALGORYTMY, stworz_kontroler
@@ -36,8 +41,7 @@ NAZWA_ALGORYTMU = 'risk_function_pid'
 MAX_SWITCHES_PER_DAY = 100  # budżet dzienny wywiedziony z życiowego budżetu przekaźnika (~500 000) - patrz test_wszystkie_rownolegle.py
 WINDOW_SEC = 3600 * 2  # Szerokość okna podglądu (2 godziny)
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-NAZWA_PLIKU_CSV = os.path.join(BASE_DIR, "Pogoda_pomiary_15_minut", "suwalki_15min_2023.csv")
+NAZWA_PLIKU_CSV = os.path.join(BASE_DIR, "Pogoda_pomiary_15_minut", "suwalki_60min_2025.csv")
 SCIEZKA_WYNIKOW = os.path.join(BASE_DIR, "wyniki", f"wyniki_symulacji_1s_{NAZWA_ALGORYTMU}.csv")
 os.makedirs(os.path.dirname(SCIEZKA_WYNIKOW), exist_ok=True)
 

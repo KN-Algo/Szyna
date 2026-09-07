@@ -20,15 +20,17 @@
 # uruchomieniem tego skryptu sam ustawisz np. SZYNA_MAX_DNI=151, Twoja wartość
 # WYGRYWA i ten konkretny test policzy się w pełnej skali.
 #
-# Uruchomienie: python uruchom_wszystkie_testy.py
-# (z katalogu Benchmark/benchmark, z aktywnym środowiskiem/venv)
+# Uruchomienie: python testy/uruchom_wszystkie_testy.py
+# (z katalogu Benchmark/benchmark - CWD musi być tam, nie w testy/ - z aktywnym
+# środowiskiem/venv; BASE_DIR poniżej wskazuje na benchmark/, a wszystkie
+# ścieżki do subprocess.run są WZGLĘDEM NIEGO, nie względem tego pliku)
 
 import os
 import subprocess
 import sys
 import time
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # benchmark/ (rodzic testy/)
 PYTHON = sys.executable
 
 # --- TRYB SZYBKI: ustawiane TYLKO jeśli użytkownik jeszcze nie ustawił sam. ---
@@ -46,15 +48,15 @@ _DOMYSLNE_SZYBKIE = {
 }
 
 # test_szum_wielu_czujnikow.py to 29 scenariuszy x wszystkie algorytmy x N
-# lokalizacji - PRZY WSZYSTKICH 35 algorytmach nawet 2 lokalizacje x 2 dni to
+# lokalizacji - PRZY WSZYSTKICH 37 algorytmach nawet 2 lokalizacje x 2 dni to
 # ~1740 zadań (za dużo na "szybki" przebieg, zmierzone ~0.19 core-min/zadanie
 # przy 2-dniowym oknie -> rzędu godzin). Ograniczone do garstki reprezentatywnych
 # algorytmów (po jednym z głównych rodzin) WYŁĄCZNIE na czas tego jednego etapu
 # (patrz ETAPY niżej, 'env' per-etap - NIE globalnie, bo SZYNA_ALGORYTMY jest
-# też czytane przez główny przegląd, który MA sprawdzić wszystkie 35).
+# też czytane przez główny przegląd, który MA sprawdzić wszystkie 37).
 _ALGORYTMY_SZUM_SZYBKI = 'algorytm_z_normy,risk_function_pid,risk_function_pid_auto,fuzzy_ryzyko_2v2_opad,nauka_kary_opad'
 # Ta sama garstka reprezentatywnych algorytmów, z tego samego powodu, dla
-# test_wrazliwosc_dwie_lokalizacje.py (35 algorytmów x scenariusze x 2
+# test_wrazliwosc_dwie_lokalizacje.py (37 algorytmów x scenariusze x 2
 # lokalizacje x szum tak/nie też szybko rośnie - patrz komentarz wyżej).
 _ALGORYTMY_WRAZ_SZYBKI = _ALGORYTMY_SZUM_SZYBKI
 for _klucz, _wartosc in _DOMYSLNE_SZYBKIE.items():
@@ -62,26 +64,26 @@ for _klucz, _wartosc in _DOMYSLNE_SZYBKIE.items():
 
 # Krok sterowania osobny (test_wrazliwosc_kroku_sterowania.py czyta SZYNA_MAX_DNI
 # ogólne, ale chcemy go dodatkowo ograniczyć do 1 lokalizacji + 2 kroków, żeby
-# nie mnożyć czasu razy 44 lokalizacje x 5 kroków x 35 algorytmy).
+# nie mnożyć czasu razy 44 lokalizacje x 5 kroków x 37 algorytmy).
 os.environ.setdefault('SZYNA_KROKI_S', '10,60')
 
 ETAPY = [
     ('Skuteczność prognozy opadów (44 pliki, pełna skala - i tak szybkie)',
-     ['test_skutecznosc_prognozy_opadow.py'], {}),
+     ['testy/test_skutecznosc_prognozy_opadow.py'], {}),
     ('Główny przegląd (tryb szybki: 5 lokalizacji, 3 dni, wszystkie algorytmy)',
-     ['test_wszystkie_rownolegle.py'], {}),
+     ['testy/test_wszystkie_rownolegle.py'], {}),
     ('Wrażliwość transmitancji + szum, 2 lokalizacje (tryb szybki: 2 scenariusze, 5 dni, 5 algorytmów)',
-     ['test_wrazliwosc_dwie_lokalizacje.py'],
-     {'env': {'SZYNA_ALGORYTMY': _ALGORYTMY_WRAZ_SZYBKI}, 'nastepnie': ['generuj_excel_wrazliwosc.py']}),
+     ['testy/test_wrazliwosc_dwie_lokalizacje.py'],
+     {'env': {'SZYNA_ALGORYTMY': _ALGORYTMY_WRAZ_SZYBKI}, 'nastepnie': ['generatory_excel/generuj_excel_wrazliwosc.py']}),
     ('Diagnostyka funkcji ryzyka (tryb szybki: 5 dni)',
-     ['test_diagnostyka_funkcji_ryzyka.py'], {}),
+     ['testy/test_diagnostyka_funkcji_ryzyka.py'], {}),
     ('Wrażliwość na krok sterowania (tryb szybki: 1 lokalizacja, 2 kroki)',
-     ['test_wrazliwosc_kroku_sterowania.py'],
+     ['testy/test_wrazliwosc_kroku_sterowania.py'],
      {'env': {'SZYNA_LOKALIZACJE': 'abisko_60min_2025'}}),
     ('Test odporności na awarie czujników (tryb szybki: 3 dni)',
-     ['test_awarie_czujnikow.py'], {}),
+     ['testy/test_awarie_czujnikow.py'], {}),
     ('Test szumu wielu czujników (tryb szybki: 2 lokalizacje, 2 dni, 5 reprezentatywnych algorytmów)',
-     ['test_szum_wielu_czujnikow.py'],
+     ['testy/test_szum_wielu_czujnikow.py'],
      {'env': {'SZYNA_ALGORYTMY': _ALGORYTMY_SZUM_SZYBKI}}),
 ]
 
@@ -136,10 +138,10 @@ def main():
               "Reszta etapów i tak się wykonała (błąd jednego nie blokuje kolejnych).")
 
     print("\nBuduję skonsolidowany Excel ze wszystkich wyników...")
-    wynik_master = subprocess.run([PYTHON, 'generuj_excel_master.py'], cwd=BASE_DIR, env=os.environ)
+    wynik_master = subprocess.run([PYTHON, 'generatory_excel/generuj_excel_master.py'], cwd=BASE_DIR, env=os.environ)
     if wynik_master.returncode != 0:
         print("!!! BŁĄD przy budowaniu skonsolidowanego Excela - poszczególne wyniki są bezpieczne "
-              "w swoich folderach wyniki/*, spróbuj uruchomić generuj_excel_master.py osobno.")
+              "w swoich folderach wyniki/*, spróbuj uruchomić generatory_excel/generuj_excel_master.py osobno.")
     else:
         print(f"\nGotowe. Skonsolidowany Excel: {os.path.join(BASE_DIR, 'wyniki', 'Podsumowanie_MASTER.xlsx')}")
 

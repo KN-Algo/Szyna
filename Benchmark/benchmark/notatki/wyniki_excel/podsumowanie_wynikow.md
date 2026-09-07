@@ -69,6 +69,17 @@ większości kolumn (B,E,F,G,H,L,M,N,O,P,S - niska wartość = zielona). **Wyją
 bo tu WIĘKSZA (mniej ujemna) wartość jest lepsza - jedyna taka kolumna w tej zakładce,
 łatwo to przeoczyć czytając wykres kolorów.
 
+## Zakładka "Wrazliwosc_wag_kary" (jeśli obecne kolumny `kara_bezpieczenstwa__*`)
+
+Pomijana bez błędu, gdy dane pochodzą sprzed dodania tej analizy (2026-09-07). Sprawdza, czy
+RANKING algorytmów wg kary bezpieczeństwa jest odporny na dobór wag trzech składowych
+(śnieg/marznący deszcz/floor -10°C) - patrz pełny opis w
+[../kara_bezpieczenstwa.md](../kara_bezpieczenstwa.md#analiza-wrażliwości-wag-czy-ranking-jest-odporny-na-dobór-wag).
+1 wiersz na algorytm: kara nominalna + ranga, potem kara + Δ ranga dla każdego z 6 scenariuszy
+(±50% na jednej wadze na raz), na dole korelacja rang Spearmana per scenariusz (literalne
+wartości, liczone tu w Pythonie, NIE formuły Excela w odróżnieniu od "Podsumowanie_algorytmy"
+niżej).
+
 ## Zakładka "Podsumowanie_lokalizacje"
 
 Macierz: wiersze = lokalizacje (unikalne wartości `Lokalizacja` z "Dane"), kolumny =

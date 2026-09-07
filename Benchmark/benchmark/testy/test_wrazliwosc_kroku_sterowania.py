@@ -33,7 +33,7 @@
 #   SZYNA_FOLDER_WYNIKOW_KROK - folder wyników (domyślnie wyniki/wrazliwosc_kroku)
 #   SZYNA_WZNOW             - wznawianie (domyślnie 1)
 #
-# Uruchomienie: python test_wrazliwosc_kroku_sterowania.py
+# Uruchomienie (z katalogu Benchmark/benchmark): python testy/test_wrazliwosc_kroku_sterowania.py
 
 import os
 import sys
@@ -46,7 +46,8 @@ from openpyxl import Workbook
 from openpyxl.chart import LineChart, Reference
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # benchmark/ (rodzic testy/)
+sys.path.insert(0, BASE_DIR)  # symulacja_fizyczna.py mieszka w benchmark/
 FOLDER_POGODA = os.path.join(BASE_DIR, "Pogoda_pomiary_15_minut")
 FOLDER_WYNIKOW = os.environ.get(
     'SZYNA_FOLDER_WYNIKOW_KROK', os.path.join(BASE_DIR, "wyniki", "wrazliwosc_kroku"))
