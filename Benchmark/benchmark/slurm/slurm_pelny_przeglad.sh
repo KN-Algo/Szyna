@@ -107,4 +107,18 @@ pip install -r "$SCRIPT_DIR/requirements.txt"
 # SLURM_CPUS_PER_TASK ustawione przez --cpus-per-task powyżej.
 export SZYNA_FOLDER_WYNIKOW="$SCRIPT_DIR/wyniki/przeglad_wielu_lokalizacji"
 
+# Ciężkie pliki (pełna trajektoria per (lokalizacja, algorytm) - ~44x37=1628
+# plików + *_uczenie.csv) idą na PD (Personal Data - duża, osobna przestrzeń
+# dyskowa na WCSS, patrz `PD-info` w terminalu klastra), NIE do katalogu
+# roboczego/domowego (na życzenie użytkownika 2026-09-07 - "wszystkie [wyniki]
+# poza excelami" tam, bo w katalogu domowym brakuje miejsca). PRZEGLAD_ZBIORCZY.csv
+# i finalny Excel ZOSTAJĄ w SZYNA_FOLDER_WYNIKOW wyżej (małe, potrzebne lokalnie
+# do pobrania/dalszej pracy) - patrz FOLDER_CSV_SZCZEGOLOWE w
+# testy/test_wszystkie_rownolegle.py i generatory_excel/generuj_excel_podsumowanie.py.
+# Jeśli Twoja usługa PD ma inną nazwę/ścieżkę niż poniżej, sprawdź `PD-info` i
+# podmień PDDIR.
+PDDIR="/lustre/pd03/hpc-wikjan2416-1787599067"
+export SZYNA_FOLDER_CSV_SZCZEGOLOWE="$PDDIR/szyna_csv_szczegolowe/przeglad_wielu_lokalizacji"
+mkdir -p "$SZYNA_FOLDER_CSV_SZCZEGOLOWE"
+
 python testy/test_wszystkie_rownolegle.py

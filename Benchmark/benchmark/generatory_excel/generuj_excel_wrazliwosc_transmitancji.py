@@ -172,6 +172,99 @@ def main():
     ws2.freeze_panes = f'B{WIERSZ_NAGLOWKA_2 + 1}'
     autoszerokosc(ws2)
 
+    # ================= "Podsumowanie_algorytmy" - JAK SOBIE PORADZIŁ KAŻDY
+    # ALGORYTM W CAŁOŚCI (uśrednione po WSZYSTKICH 8 scenariuszach naraz, nie
+    # per scenariusz jak w "Podsumowanie_scenariusze" wyżej) - na życzenie
+    # użytkownika (2026-09-07): "na podstawie [transmitancji] porównaj mi w
+    # ostatecznym excelu jak sobie poradziły poszczególne algorytmy w
+    # całości". Kolumna "Stabilność energii" to WŁAŚCIWY sens testu
+    # wrażliwości transmitancji: nie tylko "ile średnio zużywa", ale "jak
+    # BARDZO to zużycie się zmienia, gdy prawdziwy obiekt różni się od
+    # założeń" - współczynnik zmienności (CV%) średniej energii MIĘDZY 8
+    # scenariuszami (niski = odporny na niepewność modelu obiektu, wysoki =
+    # wrażliwy). =================
+    ws4 = wb.create_sheet('Podsumowanie_algorytmy')
+    ws4.cell(row=1, column=1, value=(
+        'Jeden wiersz = jeden algorytm, uśredniony po WSZYSTKICH 8 scenariuszach zaburzenia transmitancji '
+        '(i po wszystkich lokalizacjach/latach w każdym z nich) - odpowiedź na "jak sobie poradził w całości", '
+        'nie tylko w jednym konkretnym scenariuszu. "Stabilność energii (CV%)" = odchylenie standardowe średniej '
+        'energii MIĘDZY 8 scenariuszami / średnia tych 8 wartości x100 - niska wartość = zużycie energii tego '
+        'algorytmu mało zależy od tego, jaki naprawdę jest obiekt (odporny na niepewność modelu); wysoka = '
+        'algorytm silnie reaguje na błąd identyfikacji K/T1. "Ranga" - 1 = najlepszy pod danym kryterium.'
+    ))
+    ws4.cell(row=1, column=1).font = Font(name=FONT_NAZWA, italic=True, size=9, color='555555')
+    ws4.merge_cells(start_row=1, start_column=1, end_row=1, end_column=8)
+
+    kolumna_kara = 'Kara bezpieczeństwa (°C·s)' if 'Kara bezpieczeństwa (°C·s)' in df.columns else None
+    kolumna_min_hrt = 'Min HRT (°C)' if 'Min HRT (°C)' in df.columns else None
+
+    agregaty_ogolne = df.groupby('Algorytm').agg(
+        energia_srednia=('Energia (kWh)', 'mean'),
+        przelaczenia_srednie=('Przełączenia', 'mean'),
+        **({'kara_srednia': (kolumna_kara, 'mean')} if kolumna_kara else {}),
+        **({'min_hrt_najgorszy': (kolumna_min_hrt, 'min')} if kolumna_min_hrt else {}),
+    )
+    # Stabilność liczona z ŚREDNICH PER SCENARIUSZ (piwot_energia, już policzone
+    # wyżej), NIE z surowych wierszy - żeby rozrzut lokalizacji/lat w obrębie
+    # JEDNEGO scenariusza (naturalna zmienność pogody) nie mieszał się z
+    # rozrzutem MIĘDZY scenariuszami (to, co faktycznie mierzymy tutaj).
+    srednia_scenariuszy = piwot_energia.mean(axis=1)
+    std_scenariuszy = piwot_energia.std(axis=1)
+    cv_pct = (std_scenariuszy / srednia_scenariuszy * 100.0).replace([float('inf'), float('-inf')], None)
+    agregaty_ogolne['stabilnosc_cv_pct'] = cv_pct
+
+    agregaty_ogolne['ranga_energia'] = agregaty_ogolne['energia_srednia'].rank(method='min')
+    agregaty_ogolne['ranga_stabilnosc'] = agregaty_ogolne['stabilnosc_cv_pct'].rank(method='min')
+
+    WIERSZ_NAGLOWKA_4 = 2
+    naglowki_4 = ['Algorytm', 'Energia śr. (kWh)', 'Ranga energia', 'Stabilność energii (CV%)',
+                  'Ranga stabilność', 'Przełączenia śr.']
+    if kolumna_kara:
+        naglowki_4.append('Kara bezp. śr. (°C·s)')
+    if kolumna_min_hrt:
+        naglowki_4.append('Min HRT najgorszy (°C)')
+    ustaw_naglowek(ws4, WIERSZ_NAGLOWKA_4, naglowki_4)
+
+    agregaty_ogolne = agregaty_ogolne.sort_values('energia_srednia')
+    for i, (algorytm, wiersz) in enumerate(agregaty_ogolne.iterrows(), start=WIERSZ_NAGLOWKA_4 + 1):
+        kolumna = 1
+        ws4.cell(row=i, column=kolumna, value=algorytm).font = FONT_POGRUBIONY
+        kolumna += 1
+        ws4.cell(row=i, column=kolumna, value=round(float(wiersz['energia_srednia']), 2)).font = FONT_ZWYKLY
+        kolumna += 1
+        ws4.cell(row=i, column=kolumna, value=int(wiersz['ranga_energia'])).font = FONT_ZWYKLY
+        kolumna += 1
+        cv = wiersz['stabilnosc_cv_pct']
+        ws4.cell(row=i, column=kolumna, value=round(float(cv), 2) if pd.notna(cv) else None).font = FONT_ZWYKLY
+        kolumna += 1
+        ranga_stab = wiersz['ranga_stabilnosc']
+        ws4.cell(row=i, column=kolumna, value=int(ranga_stab) if pd.notna(ranga_stab) else None).font = FONT_ZWYKLY
+        kolumna += 1
+        ws4.cell(row=i, column=kolumna, value=round(float(wiersz['przelaczenia_srednie']), 1)).font = FONT_ZWYKLY
+        kolumna += 1
+        if kolumna_kara:
+            ws4.cell(row=i, column=kolumna, value=round(float(wiersz['kara_srednia']), 1)).font = FONT_ZWYKLY
+            kolumna += 1
+        if kolumna_min_hrt:
+            ws4.cell(row=i, column=kolumna, value=round(float(wiersz['min_hrt_najgorszy']), 2)).font = FONT_ZWYKLY
+            kolumna += 1
+        for k in range(1, kolumna):
+            ws4.cell(row=i, column=k).border = OBRAMOWANIE_CIENKIE
+
+    ostatni_wiersz_4 = WIERSZ_NAGLOWKA_4 + len(agregaty_ogolne)
+    for litera in ('B', 'D', 'F') + (('G',) if kolumna_kara else ()):
+        skala = ColorScaleRule(start_type='min', start_color='63BE7B',
+                                end_type='max', end_color='F8696B')
+        ws4.conditional_formatting.add(f'{litera}{WIERSZ_NAGLOWKA_4 + 1}:{litera}{ostatni_wiersz_4}', skala)
+    if kolumna_min_hrt:
+        litera_hrt = get_column_letter(naglowki_4.index('Min HRT najgorszy (°C)') + 1)
+        skala_hrt = ColorScaleRule(start_type='min', start_color='F8696B',
+                                    end_type='max', end_color='63BE7B')
+        ws4.conditional_formatting.add(f'{litera_hrt}{WIERSZ_NAGLOWKA_4 + 1}:{litera_hrt}{ostatni_wiersz_4}', skala_hrt)
+
+    ws4.freeze_panes = f'B{WIERSZ_NAGLOWKA_4 + 1}'
+    autoszerokosc(ws4)
+
     # ================= "Wnioski" - tekst =================
     ws3 = wb.create_sheet('Wnioski')
     ws3.column_dimensions['A'].width = 115

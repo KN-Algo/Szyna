@@ -624,6 +624,32 @@ odpala się dopiero przy przekroczeniu 2x limitu SENSOR_HISTORY_MAX_SAMPLES).
       mimo podobnego min HRT (dłuższy czas w strefie zagrożenia, nie głębsze
       minimum) - niewytłumaczone/niedostrojone dalej w tej sesji, ciekawy
       punkt do analizy porównawczej.
+- [x] **Przekierowanie ciężkich CSV na PD (`SZYNA_FOLDER_CSV_SZCZEGOLOWE`) + zbiorcze
+      porównanie algorytmów w Excelu wrażliwości transmitancji** (2026-09-07,
+      na życzenie użytkownika). Katalog roboczy/domowy na WCSS ma za mało
+      miejsca na ~1628 plików pełnej trajektorii (44 lok. x 37 algorytmów) +
+      *_uczenie.csv z pełnego przeglądu - użytkownik ma osobną, dużą usługę PD
+      (`PD-info`, 400G/1M plików, prawie pusta). Nowa zmienna
+      `SZYNA_FOLDER_CSV_SZCZEGOLOWE` (domyślnie = `SZYNA_FOLDER_WYNIKOW`, więc
+      ZERO zmian w zwykłym użyciu) w `testy/test_wszystkie_rownolegle.py`
+      przenosi WYŁĄCZNIE te dwa typy ciężkich plików gdzie indziej -
+      `PRZEGLAD_ZBIORCZY.csv` i finalny Excel ZOSTAJĄ w `SZYNA_FOLDER_WYNIKOW`
+      (małe, potrzebne lokalnie). **Musi być ustawiona identycznie w
+      `generatory_excel/generuj_excel_podsumowanie.py`** (ta sama zmienna) -
+      inaczej zakładka "Uczenie_adaptacyjne" cicho wyjdzie pusta (glob szukałby
+      `*_uczenie.csv` w złym miejscu) - złapane i naprawione RAZEM w tym samym
+      kroku, zweryfikowane end-to-end (3 algorytmy w tym `nauka_kary`, plik
+      `_uczenie.csv` wylądował w przekierowanym folderze, zakładka
+      "Uczenie_adaptacyjne" poprawnie go odczytała). Włączone w
+      `slurm_pelny_przeglad.sh`/`slurm_smoke_test.sh`
+      (`PDDIR=/lustre/pd03/hpc-wikjan2416-1787599067` - podmień, jeśli usługa
+      PD użytkownika ma inną ścieżkę). Przy okazji: nowa zakładka
+      "Podsumowanie_algorytmy" w `generuj_excel_wrazliwosc_transmitancji.py` -
+      jeden wiersz na algorytm uśredniony po WSZYSTKICH 8 scenariuszach naraz
+      (nie per scenariusz jak istniejąca "Podsumowanie_scenariusze") - energia/
+      kara/min HRT + kolumna "Stabilność energii (CV%)" (odchylenie std.
+      średniej energii MIĘDZY scenariuszami / średnia - niska = odporny na
+      niepewność modelu obiektu).
 - [x] **`notatki/wyniki_excel/` - jak czytać każdy plik Excela z wynikami**
       (2026-09-03, na życzenie użytkownika) - jeden plik notatki NA KAŻDY z 8
       generatorów Excela w projekcie (`podsumowanie_wynikow.md`,

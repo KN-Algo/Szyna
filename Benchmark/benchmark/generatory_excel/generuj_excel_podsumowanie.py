@@ -41,6 +41,13 @@ FOLDER_WYNIKOW = os.environ.get(
     'SZYNA_FOLDER_WYNIKOW', os.path.join(BASE_DIR, "wyniki", "przeglad_wielu_lokalizacji"))
 SCIEZKA_CSV = os.path.join(FOLDER_WYNIKOW, "PRZEGLAD_ZBIORCZY.csv")
 SCIEZKA_XLSX = os.path.join(FOLDER_WYNIKOW, "Podsumowanie_wynikow.xlsx")
+# SZYNA_FOLDER_CSV_SZCZEGOLOWE - ta sama zmienna co w test_wszystkie_rownolegle.py:
+# jeśli przy LICZENIU przekierowano ciężkie pliki (*_uczenie.csv, pełna
+# trajektoria) gdzie indziej niż FOLDER_WYNIKOW (np. duża przestrzeń PD na
+# WCSS, żeby nie zapychać ciasnego katalogu domowego/roboczego), trzeba
+# ustawić TĘ SAMĄ wartość i tutaj, inaczej zakładka "Uczenie_adaptacyjne"
+# poniżej cicho wyjdzie pusta (glob nie znajdzie plików w złym miejscu).
+FOLDER_CSV_SZCZEGOLOWE = os.environ.get('SZYNA_FOLDER_CSV_SZCZEGOLOWE', FOLDER_WYNIKOW)
 
 # Życiowy budżet przełączeń przekaźnika/styku - patrz uzasadnienie przy
 # MAX_SWITCHES_PER_DAY w test_wszystkie_rownolegle.py (ta sama zmienna
@@ -681,7 +688,7 @@ def main():
     # pokazuje ZMIANY w czasie). Pomijana bez błędu, jeśli żadne takie pliki
     # nie istnieją (np. przegląd nie obejmował algorytmów nauka_kary_*).
     # ==========================================================================
-    _wszystkie_pliki_uczenia = sorted(glob.glob(os.path.join(FOLDER_WYNIKOW, '*_uczenie.csv')))
+    _wszystkie_pliki_uczenia = sorted(glob.glob(os.path.join(FOLDER_CSV_SZCZEGOLOWE, '*_uczenie.csv')))
     # Tylko rodzina nauka_kary_* (schemat: czynnik_nauczony + 3 liczniki kar) - patrz
     # osobny blok niżej dla risk_function_pid_auto (schemat: koszt + strojone progi,
     # NIEKOMPATYBILNY z kolumnami poniżej - własna zakładka "Strojenie_progow_ryzyka").

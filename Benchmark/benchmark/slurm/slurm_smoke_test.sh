@@ -62,4 +62,12 @@ export SZYNA_LOKALIZACJE="abisko_60min_2025,ojmiakon_60min_2025"
 export SZYNA_ALGORYTMY="algorytm_z_normy,risk_function,risk_function_pid,fuzzy_ryzyko_1_opad"
 export SZYNA_FOLDER_WYNIKOW="$SCRIPT_DIR/wyniki/smoke_test_klaster"
 
+# Sama skala tego testu jest znikoma (8 zadań), ale ustawiamy TĘ SAMĄ zmienną co
+# slurm_pelny_przeglad.sh (przekierowanie ciężkich CSV na PD), żeby smoke test
+# faktycznie sprawdził ten kod/ścieżkę PRZED zleceniem dużego zadania - lepiej
+# złapać literówkę w PDDIR/brak uprawnień teraz (30 min) niż po 12h liczenia.
+PDDIR="/lustre/pd03/hpc-wikjan2416-1787599067"
+export SZYNA_FOLDER_CSV_SZCZEGOLOWE="$PDDIR/szyna_csv_szczegolowe/smoke_test_klaster"
+mkdir -p "$SZYNA_FOLDER_CSV_SZCZEGOLOWE"
+
 python testy/test_wszystkie_rownolegle.py

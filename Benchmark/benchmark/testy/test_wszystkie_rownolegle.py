@@ -46,6 +46,17 @@ FOLDER_WYNIKOW = os.environ.get(
     'SZYNA_FOLDER_WYNIKOW', os.path.join(BASE_DIR, "wyniki", "przeglad_wielu_lokalizacji"))
 os.makedirs(FOLDER_WYNIKOW, exist_ok=True)
 
+# Domyślnie te same co FOLDER_WYNIKOW (zachowanie sprzed tej zmiany) - ustaw
+# SZYNA_FOLDER_CSV_SZCZEGOLOWE na INNĄ ścieżkę (np. dużą przestrzeń dyskową
+# typu PD na WCSS, patrz slurm_pelny_przeglad.sh), żeby WYŁĄCZNIE ciężkie
+# pliki (pełna trajektoria per (lokalizacja, algorytm) + *_uczenie.csv - patrz
+# ZAPISZ_CSV_SZCZEGOLOWE niżej) lądowały gdzie indziej niż PRZEGLAD_ZBIORCZY.csv
+# i finalny Excel (te dwa zawsze zostają w FOLDER_WYNIKOW - małe, potrzebne
+# lokalnie). Przydatne, gdy katalog roboczy/domowy na klastrze ma ciasny limit
+# miejsca, a osobna, duża przestrzeń (PD) jest na coś innego przeznaczona.
+FOLDER_CSV_SZCZEGOLOWE = os.environ.get('SZYNA_FOLDER_CSV_SZCZEGOLOWE', FOLDER_WYNIKOW)
+os.makedirs(FOLDER_CSV_SZCZEGOLOWE, exist_ok=True)
+
 # Budżet przełączeń DZIENNY, egzekwowany NA ŻYWO w trakcie symulacji przez
 # każdy algorytm o wyjściu binarnym/dyskretnym (histereza, FL2/FL2v2/FL3) -
 # wywodzi się z założonego budżetu ŻYCIOWEGO przekaźnika/styku (patrz
@@ -287,7 +298,7 @@ def przetworz_kombinacje(nazwa_lokalizacji, sciezka_csv, nazwa_algorytmu):
                 df_uczenie.insert(0, 'algorytm', nazwa_algorytmu)
                 df_uczenie.insert(0, 'lokalizacja', nazwa_lokalizacji)
                 df_uczenie.to_csv(
-                    os.path.join(FOLDER_WYNIKOW, f"{nazwa_lokalizacji}_{nazwa_algorytmu}_uczenie.csv"),
+                    os.path.join(FOLDER_CSV_SZCZEGOLOWE, f"{nazwa_lokalizacji}_{nazwa_algorytmu}_uczenie.csv"),
                     index=False,
                 )
 
@@ -300,13 +311,13 @@ def przetworz_kombinacje(nazwa_lokalizacji, sciezka_csv, nazwa_algorytmu):
         stats['perturb_l_pct'] = PERTURBACJA_L_PCT
         df_zapis = fiz.przygotuj_do_zapisu(df_wynik, ZAPISZ_CO_N_SEKUND)
         # Etykieta scenariusza w nazwie pliku - żeby różne scenariusze (analiza
-        # wrażliwości) mogły bezpiecznie współdzielić ten sam FOLDER_WYNIKOW bez
-        # nadpisywania się nawzajem (domyślnie 'nominal', czyli identyczna nazwa
+        # wrażliwości) mogły bezpiecznie współdzielić ten sam FOLDER_CSV_SZCZEGOLOWE
+        # bez nadpisywania się nawzajem (domyślnie 'nominal', czyli identyczna nazwa
         # jak przed dodaniem analizy wrażliwości - zero zmian w zwykłym użyciu).
         if ZAPISZ_CSV_SZCZEGOLOWE:
             przedrostek = f"{nazwa_lokalizacji}_{nazwa_algorytmu}" if SCENARIUSZ_ETYKIETA == 'nominal' \
                 else f"{nazwa_lokalizacji}_{nazwa_algorytmu}_{SCENARIUSZ_ETYKIETA}"
-            df_zapis.to_csv(os.path.join(FOLDER_WYNIKOW, f"{przedrostek}.csv"), index=False)
+            df_zapis.to_csv(os.path.join(FOLDER_CSV_SZCZEGOLOWE, f"{przedrostek}.csv"), index=False)
 
         return nazwa_lokalizacji, nazwa_algorytmu, stats, None
     except Exception:
@@ -440,7 +451,11 @@ def main():
               "spróbuj uruchomić generuj_excel_podsumowanie.py osobno !!!")
         traceback.print_exc()
 
-    print(f"\nGotowe. Wszystkie pliki CSV i Excel w folderze: {FOLDER_WYNIKOW}")
+    if FOLDER_CSV_SZCZEGOLOWE != FOLDER_WYNIKOW:
+        print(f"\nGotowe. PRZEGLAD_ZBIORCZY.csv i Excel w folderze: {FOLDER_WYNIKOW}")
+        print(f"Szczegółowe CSV (pełna trajektoria/uczenie) w folderze: {FOLDER_CSV_SZCZEGOLOWE}")
+    else:
+        print(f"\nGotowe. Wszystkie pliki CSV i Excel w folderze: {FOLDER_WYNIKOW}")
 
 
 if __name__ == '__main__':
