@@ -50,27 +50,41 @@ set -euo pipefail
 
 NOWE_ALGORYTMY="mpc_liniowy_zabezpieczony,mpc_prognoza_pogody_zabezpieczony,mpc_miekkie_ograniczenia_zabezpieczony,mpc_binarny,mpc_prognoza_binarny,mpc_miekkie_binarny,fuzzy_ryzyko_adaptacyjny,fuzzy_ryzyko_agresywny"
 
+# WAŻNE (dodane 2026-09-15 po realnym incydencie QOSGrpCPUMinutesLimit na
+# klastrze): --time PONIŻEJ nadpisuje #SBATCH --time W KAŻDYM slurm_*.sh (flagi
+# sbatch z linii poleceń mają pierwszeństwo nad dyrektywami w pliku) - CELOWO
+# dużo mniejsze niż oryginalne 12h/6h/4h (te były dobrane pod PEŁNY przebieg 37
+# algorytmów) - żeby zadeklarowana rezerwacja (rdzenie x czas) NIE przekroczyła
+# dostępnego budżetu konta przy zlecaniu (SLURM sprawdza DEKLAROWANY, nie
+# rzeczywisty czas) - realny szacunek dla 8 algorytmów to 42-83/16-23/36/35 core-h
+# (patrz nagłówek pliku), więc te limity mają WCIĄŻ 2-4x zapas, nie są "na styk".
+CZAS_PELNY_PRZEGLAD=03:00:00      # 64 rdzenie x 3h = 192 core-h ceiling (realnie ~42-83).
+CZAS_WRAZLIWOSC_2LOK=01:30:00     # 64 rdzenie x 1.5h = 96 core-h ceiling (realnie ~16-23).
+CZAS_KROK_STEROWANIA=02:00:00     # 64 rdzenie x 2h = 128 core-h ceiling (realnie ~36).
+CZAS_SZUM_CZUJNIKOW=02:00:00      # 64 rdzenie x 2h = 128 core-h ceiling (realnie ~35).
+CZAS_TEST_AWARIE=01:00:00         # 16 rdzeni x 1h = 16 core-h ceiling (realnie kilka).
+
 echo "Dolicz TYLKO nowe algorytmy: $NOWE_ALGORYTMY"
 echo ""
 
 echo "1/5 Zlecam pelny_przeglad (tylko nowe algorytmy)..."
-JOB1=$(sbatch --parsable --export=ALL,SZYNA_ALGORYTMY="$NOWE_ALGORYTMY" slurm/slurm_pelny_przeglad.sh)
+JOB1=$(sbatch --parsable --time=$CZAS_PELNY_PRZEGLAD --export=ALL,SZYNA_ALGORYTMY="$NOWE_ALGORYTMY" slurm/slurm_pelny_przeglad.sh)
 echo "    -> job $JOB1"
 
 echo "2/5 Zlecam wrazliwosc_2lok (start po sukcesie $JOB1)..."
-JOB2=$(sbatch --parsable --dependency=afterok:$JOB1 --export=ALL,SZYNA_ALGORYTMY="$NOWE_ALGORYTMY" slurm/slurm_wrazliwosc_2lok.sh)
+JOB2=$(sbatch --parsable --dependency=afterok:$JOB1 --time=$CZAS_WRAZLIWOSC_2LOK --export=ALL,SZYNA_ALGORYTMY="$NOWE_ALGORYTMY" slurm/slurm_wrazliwosc_2lok.sh)
 echo "    -> job $JOB2"
 
 echo "3/5 Zlecam krok_sterowania (start po sukcesie $JOB2)..."
-JOB3=$(sbatch --parsable --dependency=afterok:$JOB2 --export=ALL,SZYNA_ALGORYTMY_KROK="$NOWE_ALGORYTMY" slurm/slurm_krok_sterowania.sh)
+JOB3=$(sbatch --parsable --dependency=afterok:$JOB2 --time=$CZAS_KROK_STEROWANIA --export=ALL,SZYNA_ALGORYTMY_KROK="$NOWE_ALGORYTMY" slurm/slurm_krok_sterowania.sh)
 echo "    -> job $JOB3"
 
 echo "4/5 Zlecam szum_wielu_czujnikow (start po sukcesie $JOB3)..."
-JOB4=$(sbatch --parsable --dependency=afterok:$JOB3 --export=ALL,SZYNA_ALGORYTMY="$NOWE_ALGORYTMY" slurm/slurm_szum_wielu_czujnikow.sh)
+JOB4=$(sbatch --parsable --dependency=afterok:$JOB3 --time=$CZAS_SZUM_CZUJNIKOW --export=ALL,SZYNA_ALGORYTMY="$NOWE_ALGORYTMY" slurm/slurm_szum_wielu_czujnikow.sh)
 echo "    -> job $JOB4"
 
 echo "5/5 Zlecam test_awarie (start po sukcesie $JOB4)..."
-JOB5=$(sbatch --parsable --dependency=afterok:$JOB4 --export=ALL,SZYNA_ALGORYTMY="$NOWE_ALGORYTMY" slurm/slurm_test_awarie.sh)
+JOB5=$(sbatch --parsable --dependency=afterok:$JOB4 --time=$CZAS_TEST_AWARIE --export=ALL,SZYNA_ALGORYTMY="$NOWE_ALGORYTMY" slurm/slurm_test_awarie.sh)
 echo "    -> job $JOB5"
 
 echo ""
