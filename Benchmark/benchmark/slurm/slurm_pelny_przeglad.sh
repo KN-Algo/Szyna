@@ -36,7 +36,7 @@
 # testy/test_wszystkie_rownolegle.py): 56 zadań (28 algorytmów x 2 lokalizacje,
 # okno 2 dni) zajęło 1.4 min na 4 rdzeniach, co ekstrapolowane na ÓWCZESNY
 # pełny zakres dat (43 lokalizacje x 28 algorytmów, ~151 dni) dawało szacunek
-# rzędu 150-300 CPU-h. Rejestr od tego czasu urósł do 37 algorytmów (dodane 3
+# rzędu 150-300 CPU-h. Rejestr od tego czasu urósł do 42 algorytmów (dodane 3
 # warianty MPC + 2 algorytmy inspirowane literaturą) i 44 lokalizacji
 # (2026-09-03, nowa lista 44 lokalizacji użytkownika) - skalując proporcjonalnie
 # (35/28 x 44/43) daje to ~192-384 CPU-h, WCIĄŻ w granicach zadeklarowanego

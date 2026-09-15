@@ -62,15 +62,25 @@ zachowaniu wymaganego poziomu bezpieczeństwa (norma jako twardy wyznacznik).
     Opisy_algorytmow, Zlozonosc_obliczeniowa, Wnioski). Wywoływane
     automatycznie na końcu `test_wszystkie_rownolegle.py`.
 
-## Zbiór algorytmów (37 sztuk, w `rejestr_algorytmow.ALGORYTMY`)
+## Zbiór algorytmów (45 sztuk, w `rejestr_algorytmow.ALGORYTMY`)
 
 Rodziny: automat/histereza wg normy (2, + wariant górski `compute_control_gorski`
 = 3), funkcja ryzyka binarna/PID/LADRC/NADRC (4, patrz `notatki/algorytmy/adrc.md`)
 + ich warianty `_opad` (2 — binarna/PID), PID/fuzzy do progów normy (5), fuzzy
-logic "surowy" wokół stałego celu (4), fuzzy + funkcja ryzyka (4) + ich warianty
-`_opad` (4), uczenie adaptacyjne z kar `nauka_kary*` (5 — bazowy + temp/opad/
-bliźniak/ryzyko), MPC (3 — `mpc_liniowy`/`mpc_prognoza_pogody`/
-`mpc_miekkie_ograniczenia`, patrz sekcja "MPC (regulator predykcyjny)" niżej),
+logic "surowy" wokół stałego celu (4), fuzzy + funkcja ryzyka (4, +
+`fuzzy_ryzyko_adaptacyjny` — jak fuzzy_ryzyko_1, ale z automatycznie
+strojonymi progami funkcji przynależności, "perturb-and-observe" jak
+`risk_function_pid_auto`, + `fuzzy_ryzyko_agresywny` — jak fuzzy_ryzyko_1, ale
+z NA STAŁE zacieśnionymi progami i podniesioną mocą pośrednią, reaguje mocniej
+i wcześniej na złe warunki = 6) + ich warianty `_opad` (4), uczenie
+adaptacyjne z kar `nauka_kary*` (5 — bazowy + temp/opad/bliźniak/ryzyko), MPC
+(9 — `mpc_liniowy`/`mpc_prognoza_pogody`/`mpc_miekkie_ograniczenia` (ciągłe) +
+`mpc_binarny`/`mpc_prognoza_binarny`/`mpc_miekkie_binarny` (moc {0,100}%,
+przeszukanie wyczerpujące 2^8 kombinacji - KOMPLETNA macierz ciągłe×binarne
+na wszystkich 3 wariantach) + `mpc_liniowy_zabezpieczony`/
+`mpc_prognoza_pogody_zabezpieczony`/`mpc_miekkie_ograniczenia_zabezpieczony`
+(dwie warstwy zabezpieczeń przed uszkodzonym czujnikiem/zdegenerowaną
+identyfikacją SOPDT — patrz sekcja "MPC (regulator predykcyjny)" niżej),
 inspirowane literaturą (2 — `histereza_pamiec_rosy`/`predykcja_wygladzanie_prosta`,
 Chiaradonna i in. 2021). Dokładne opisy typu/celu/adaptacyjności — patrz zakładka "Opisy_algorytmow" w
 Excelu albo bezpośrednio `rejestr_algorytmow.py`. Opis DZIAŁANIA każdego
@@ -495,6 +505,97 @@ odpala się dopiero przy przekroczeniu 2x limitu SENSOR_HISTORY_MAX_SAMPLES).
       hipotezą), IAE/ISE/ITAE i FLOPy rzeczywiste policzone poprawnie, 0
       błędów. Patrz `notatki/algorytmy/mpc_liniowy.md`/`mpc_prognoza_pogody.md`/
       `mpc_miekkie_ograniczenia.md`.
+- [x] **Zabezpieczenia MPC + `mpc_binarny` + `fuzzy_ryzyko_adaptacyjny`** (2026-09-15,
+      na życzenie użytkownika, wyjście z testu awaryjności czujników pokazujące
+      +140-157% energii dla wszystkich 3 wariantów MPC pod `HRT_bias`):
+        - **Diagnoza (debugowaniem instrumentowanym, NIE analizą kodu - pierwsza
+          hipoteza o "braku kompensacji błędu sensora w członie regulacyjnym MPC"
+          była PRAWDZIWYM efektem, ale zmierzone: NIE wyjaśniała obserwowanego
+          wzrostu)**: `autotest()` (`rdzen_kontrolera.py`) przerywa skok grzania
+          0→100% przy `hrt >= AUTOTEST_SAFETY_CUTOFF_HRT_C` (~38°C), sprawdzane na
+          ZMIERZONYM HRT. Pod `HRT_bias` (+5°C) próg jest osiągany sztucznie
+          wcześniej, ucinając skok w połowie transjentu - dopasowanie SOPDT trafia
+          w DOLNE OGRANICZENIA solvera (zmierzone: K=5.06/T1=T2=5.0/L≈0 zamiast
+          K≈51.1/T1≈1129/T2≈2443/L≈1185). MPC buduje model blokowy z tych
+          zdegenerowanych parametrów i utyka przy 100% mocy próbując dogonić cel,
+          który z fałszywym modelem wygląda nieosiągalny. Wyjaśnia też anomalie
+          ADRC/LADRC/NADRC w tym samym teście (`-99.8%`/`+28.9%` pod `HRT_bias`) -
+          ten sam `autotest_result` zasila `wylicz_parametry_adrc`, NIEZABEZPIECZONE
+          przed tym samym defektem (świadomie, poza zakresem tej prośby).
+        - **Dwie warstwy zabezpieczeń** (`mpc_wspolne._MPCMachineryMixinZabezpieczony`,
+          NOWE, OSOBNE algorytmy `mpc_liniowy_zabezpieczony`/
+          `mpc_prognoza_pogody_zabezpieczony`/`mpc_miekkie_ograniczenia_zabezpieczony`
+          - na WYRAŹNE życzenie użytkownika NIE zmieniono istniejących 3 wariantów
+          bez przyrostka, zostają jako niezabezpieczony punkt odniesienia w
+          teście awaryjności): (1) kontrola jakości dopasowania SOPDT - odrzuca
+          dopasowanie trafiające w dolne granice solvera/ze słabym r² i buduje
+          model blokowy z BEZPIECZNYCH wartości domyślnych (`ADRC_FALLBACK_*`)
+          zamiast z niego; (2) krzyżowa kontrola bieżącego pomiaru HRT vs własna
+          predykcja modelu blokowego (`_wiarygodny_pomiar_hrt`, próg 3°C) -
+          niezależna, adresuje mechanizm z pierwszej hipotezy. **WAŻNE - PIERWSZA
+          WERSJA warstwy 1** (odrzuć dopasowanie -> zostań NA ZAWSZE na regulatorze
+          P, bez podstawienia bezpiecznych domyślnych) była ZMIERZONA jako
+          NIEBEZPIECZNA: regulator P liczy błąd względem TEGO SAMEGO zmierzonego
+          (obciążonego) HRT, który był przyczyną odrzucenia - dawało to pod
+          `HRT_bias` `min_hrt=-17.0°C` (pod bezwzględnym floorem -10°C!) i karę
+          ~4.2 mln, GORZEJ niż niezabezpieczony wariant referencyjny (`min_hrt=
+          -5.4°C`, kara=0) mimo mniejszej energii - "bezpieczne" było mniej
+          bezpieczne niż "marnotrawne". Poprawione budowaniem modelu z
+          `ADRC_FALLBACK_K/T1/T2/L` (ten sam obiekt, sprawdzone jako
+          reprezentatywne) - dzięki temu warstwa 2 staje się AKTYWNA i faktycznie
+          chroni. **Zweryfikowane PO poprawce**: energia=1210.4 kWh pod HRT_bias
+          (-64% względem zepsutego 3356.1 kWh), min_hrt=-6.49°C (bezpiecznie),
+          max_hrt=25.9°C (bez przegrzania), kara=0 - jednocześnie bezpieczniej I
+          energetycznie lepiej, nie kompromis. Patrz
+          `notatki/algorytmy/mpc_liniowy_zabezpieczony.md` po pełną diagnozę z
+          liczbami (obu wersji).
+        - **`mpc_binarny`** - jak `mpc_liniowy`, ale moc na blok ograniczona do
+          {0%,100%} (przekaźnik, jak większość reszty projektu), rozwiązywane
+          WYCZERPUJĄCYM przeszukaniem 2^8=256 kombinacji (dokładne optimum
+          globalne, tanie bo 900s/przeplanowanie) wg TEJ SAMEJ `_koszt_mpc` -
+          izoluje czysty koszt dyskretyzacji na przekaźnik binarny. Fallback P
+          też binaryzowany (próg 50%). Zweryfikowane: energia WYŻSZA niż
+          mpc_liniowy na tym samym oknie (oczekiwane - bang-bang nie ma mocy
+          pośrednich do precyzyjnego trzymania celu). Patrz
+          `notatki/algorytmy/mpc_binarny.md`.
+        - **`fuzzy_ryzyko_adaptacyjny`** - jak `fuzzy_ryzyko_1`, plus automatyczne
+          strojenie 4 progów funkcji przynależności silnika FL1
+          (`silniki_fuzzy.wnioskowanie_fl_parametryzowane`, wydzielone z
+          `wnioskowanie_fl_podstawowe` bez zmiany zachowania FL1/FL2/FL3), tą samą
+          metodą "perturb-and-observe" co `risk_function_pid_auto` - odpowiednik
+          SIMC dla progów rozmytych, którego `fuzzy_ryzyko_1` explicite nie miało.
+          Patrz `notatki/algorytmy/fuzzy_ryzyko_adaptacyjny.md`.
+      Rejestr: 37 → 42 algorytmów. Wszystkie 5 zweryfikowane realnym smoke testem
+      (nie tylko instancjonowaniem) - 0 błędów.
+- [x] **`mpc_prognoza_binarny` + `mpc_miekkie_binarny` + `fuzzy_ryzyko_agresywny`**
+      (2026-09-15, na życzenie użytkownika - "mam wersje MPC ciągłe i dyskretne
+      żeby je porównać w całości" + "bardziej karaj fuzzy logic... żeby
+      znacznie mocniej reagował na warunki złe"):
+        - Do tej pory TYLKO `mpc_liniowy` miał binarny odpowiednik
+          (`mpc_binarny`) - dobudowane analogiczne `mpc_prognoza_binarny`/
+          `mpc_miekkie_binarny` (ta sama `_MPCMachineryMixinBinarny`, patrz
+          wyżej), żeby macierz ciągłe×binarne była KOMPLETNA na wszystkich 3
+          wariantach MPC. Zweryfikowane (smoke test, abisko, 6 dni):
+          mpc_prognoza_pogody=827.7 kWh vs mpc_prognoza_binarny=2013.2 kWh,
+          mpc_miekkie_ograniczenia=875.4 kWh vs mpc_miekkie_binarny=2013.2 kWh -
+          te dwa binarne wyniki wyszły IDENTYCZNE, zweryfikowane bezpośrednio że
+          to zbieg okoliczności (w tak mroźnym oknie obie funkcje kosztu i tak
+          wskazują 100% w niemal każdym bloku), NIE błąd dziedziczenia -
+          funkcje kosztu realnie się różnią (1820.0 vs 40630.1 dla tych samych
+          przykładowych danych).
+        - `fuzzy_ryzyko_agresywny` - jak `fuzzy_ryzyko_1`, ale
+          `silniki_fuzzy.wnioskowanie_fl_agresywne` (nowa funkcja, cienka
+          otoczka nad `wnioskowanie_fl_parametryzowane` rozszerzonym o
+          parametry `moc_low`/`moc_med`) z NA STAŁE zaostrzonymi progami
+          (prog_chlodno 3.0→1.5°C, prog_mrozno 6.0→3.5°C, prog_lodowato
+          -15/-12→-12/-8°C) i podniesioną mocą pośrednią (MOC_LOW 25→50%,
+          MOC_MED 60→85%) - CELOWO nie przez nowe reguły/mnożnik po fakcie,
+          tylko zmianę kształtu zbiorów rozmytych (dalej prawidłowe Sugeno).
+          Zweryfikowane: fuzzy_ryzyko_1=587.5 kWh vs
+          fuzzy_ryzyko_agresywny=724.8 kWh (+23%, oczekiwany kompromis -
+          bezpieczniej kosztem energii, nie błąd).
+      Rejestr: 42 → 45 algorytmów. Wszystkie 3 zweryfikowane realnym smoke
+      testem - 0 błędów.
 - [x] **2 algorytmy z literatury: `histereza_pamiec_rosy` + `predykcja_wygladzanie_prosta`**
       (2026-09-03, na życzenie użytkownika, wprost z przesłanej pracy: S.
       Chiaradonna, G. Masetti, F. Di Giandomenico, F. Righetti, C. Vallati,

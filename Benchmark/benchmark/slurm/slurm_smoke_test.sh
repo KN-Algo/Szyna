@@ -1,7 +1,7 @@
 #!/bin/bash
 # slurm_smoke_test.sh
 #
-# MAŁY test przed pełnym przeglądem (44 lokalizacje x 37 algorytmy) - sprawdza
+# MAŁY test przed pełnym przeglądem (44 lokalizacje x 42 algorytmy) - sprawdza
 # na klastrze WCSS (https://man.e-science.pl/pl/kdm/slurm/gpu,
 # https://man.e-science.pl/pl/kdm/slurm/partycje-slurm):
 #   1) że środowisko Pythona (venv + pakiety) się stawia,

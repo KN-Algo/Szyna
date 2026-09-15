@@ -120,10 +120,18 @@ NAZWY_ALGORYTMOW = {
     'mpc_liniowy': 'MPC (bez prognozy pogody)',
     'mpc_prognoza_pogody': 'MPC (z prognozą pogody)',
     'mpc_miekkie_ograniczenia': 'MPC (bariera wykładnicza)',
+    'mpc_liniowy_zabezpieczony': 'MPC (bez prognozy, zabezpieczony)',
+    'mpc_prognoza_pogody_zabezpieczony': 'MPC (z prognozą, zabezpieczony)',
+    'mpc_miekkie_ograniczenia_zabezpieczony': 'MPC (bariera wykł., zabezpieczony)',
     'histereza_pamiec_rosy': 'Histereza + punkt rosy (pamięć)',
     'predykcja_wygladzanie_prosta': 'Predykcja (wygładzanie Holta)',
     'risk_function_ladrc': 'ADRC (liniowy, LADRC)',
     'risk_function_nadrc': 'ADRC (nieliniowy, NADRC)',
+    'fuzzy_ryzyko_adaptacyjny': 'Fuzzy logic (FL1, adaptacyjny)',
+    'fuzzy_ryzyko_agresywny': 'Fuzzy logic (FL1, agresywny)',
+    'mpc_binarny': 'MPC (binarny, zał./wył.)',
+    'mpc_prognoza_binarny': 'MPC (z prognozą, binarny)',
+    'mpc_miekkie_binarny': 'MPC (bariera wykł., binarny)',
 }
 ALGORYTM_BAZOWY = 'Automat z normy (bazowy)'
 

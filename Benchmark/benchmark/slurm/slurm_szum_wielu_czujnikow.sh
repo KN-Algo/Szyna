@@ -2,7 +2,7 @@
 # slurm_szum_wielu_czujnikow.sh
 #
 # Pełny test odporności na szum pomiarowy (test_szum_wielu_czujnikow.py) -
-# 10 losowych lokalizacji (z puli 44, seed stały) x wszystkie 37 algorytmy
+# 10 losowych lokalizacji (z puli 44, seed stały) x wszystkie 42 algorytmy
 # (rejestr urósł z 29 do 35 - dodane 3 warianty MPC + 2 algorytmy inspirowane
 # literaturą, 2026-09-03) x 29 scenariuszy szumu (7 czujników x 4 poziomy +
 # brak_awarii) = 10150 zadań.

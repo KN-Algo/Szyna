@@ -3,7 +3,7 @@
 #
 # ANALIZA WRAŻLIWOŚCI na niepewność modelu obiektu (transmitancja GRZANIA,
 # SOPDT K/T1/T2/L - patrz symulacja_fizyczna.przygotuj_modele_stanowe): PEŁNY
-# przegląd (44 lokalizacje x 37 algorytmy, pełny zakres dat) powtórzony dla 8
+# przegląd (44 lokalizacje x 42 algorytmy, pełny zakres dat) powtórzony dla 8
 # scenariuszy, w których PRAWDZIWY symulowany obiekt (nie założenia żadnego
 # algorytmu) ma zaburzone parametry względem nominalnych:
 #
@@ -42,7 +42,7 @@
 # CSV pozwala je później bezpiecznie scalić w jedną analizę porównawczą.
 #
 # UWAGA: SZYNA_ZAPISZ_CSV_SZCZEGOLOWE=0 (ustawione niżej) - przy 8 scenariuszach
-# x 44 lokalizacje x 37 algorytmów szczegółowe CSV per (lokalizacja, algorytm)
+# x 44 lokalizacje x 42 algorytmów szczegółowe CSV per (lokalizacja, algorytm)
 # to tysiące zbędnych plików (nieużywanych przez żaden z dwóch generatorów
 # Excela - patrz komentarz w test_wszystkie_rownolegle.py). Liczy się tylko
 # PRZEGLAD_ZBIORCZY.csv -> Podsumowanie_wynikow.xlsx per scenariusz, potem
@@ -96,7 +96,7 @@ esac
 echo "Scenariusz: $SZYNA_SCENARIUSZ (K${SZYNA_PERTURB_K:+}% T1${SZYNA_PERTURB_T1:+}%)"
 
 # Celowo NIE ustawiamy SZYNA_MAX_DNI/SZYNA_LOKALIZACJE/SZYNA_ALGORYTMY -
-# pełny zakres dat, wszystkie 44 lokalizacje, wszystkie 37 algorytmy (zgodnie
+# pełny zakres dat, wszystkie 44 lokalizacje, wszystkie 42 algorytmy (zgodnie
 # z decyzją użytkownika - patrz uzasadnienie kosztu w nagłówku pliku).
 export SZYNA_FOLDER_WYNIKOW="$SCRIPT_DIR/wyniki/wrazliwosc_transmitancji/$SZYNA_SCENARIUSZ"
 export SZYNA_ZAPISZ_CSV_SZCZEGOLOWE=0

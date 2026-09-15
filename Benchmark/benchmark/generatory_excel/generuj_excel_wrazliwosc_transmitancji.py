@@ -5,10 +5,12 @@
 # SZYNA_PERTURB_K_PCT/SZYNA_PERTURB_T1_PCT) w JEDEN plik Excela, żeby nie trzeba było
 # otwierać 8 osobnych plików po kolei, żeby porównać wpływ zaburzenia transmitancji.
 #
-# Źródło: wyniki/wyniki_excela/<scenariusz>/Podsumowanie_wynikow.xlsx (zakładka "Dane" -
-# literalne wartości, nie formuły, patrz notatki/wyniki_excel/README.md) - czyli pliki
-# już wyekstrahowane z zipów przesłanych przez użytkownika z klastra. Jeśli w przyszłości
-# doda się nowy scenariusz/nowy plik, wystarczy dopisać go do SCENARIUSZE niżej.
+# Źródło: wyniki/wrazliwosc_transmitancji/<scenariusz>/Podsumowanie_wynikow.xlsx
+# (zakładka "Dane" - literalne wartości, nie formuły, patrz notatki/wyniki_excel/
+# README.md) - DOKŁADNIE ta ścieżka, do której slurm_wrazliwosc_transmitancji.sh
+# zapisuje wyniki KAŻDEGO z 8 elementów tablicy (SZYNA_FOLDER_WYNIKOW="wyniki/
+# wrazliwosc_transmitancji/$SZYNA_SCENARIUSZ"). Jeśli w przyszłości doda się nowy
+# scenariusz/nowy plik, wystarczy dopisać go do SCENARIUSZE niżej.
 #
 # Uruchomienie (z katalogu Benchmark/benchmark): python generatory_excel/generuj_excel_wrazliwosc_transmitancji.py
 
@@ -20,7 +22,7 @@ from openpyxl.formatting.rule import ColorScaleRule
 from openpyxl.utils import get_column_letter
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # benchmark/ (rodzic generatory_excel/)
-FOLDER_EXCELA = os.path.join(BASE_DIR, "wyniki", "wyniki_excela")
+FOLDER_EXCELA = os.path.join(BASE_DIR, "wyniki", "wrazliwosc_transmitancji")
 SCIEZKA_WYJSCIOWA = os.path.join(FOLDER_EXCELA, "Podsumowanie_wrazliwosc_transmitancji_WSZYSTKIE.xlsx")
 
 # (folder, etykieta, perturbacja_K_pct, perturbacja_T1_pct) - kolejność wyświetlania.

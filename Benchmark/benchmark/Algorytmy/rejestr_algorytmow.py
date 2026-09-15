@@ -573,6 +573,113 @@ ALGORYTMY = {
         'zlozonosc_pamieciowa': 'O(1) (bufor kroczący) + bufory autotestu/modelu blokowego',
         'pamiec_przyblizona_mb': 3.0,
     },
+    'mpc_liniowy_zabezpieczony': {
+        'modul': 'funkcja_mpc_liniowy_zabezpieczony',
+        'klasa': 'KontrolerMPCLiniowyZabezpieczony',
+        'metoda': 'mpc_liniowy_zabezpieczony',
+        'opis': 'Jak mpc_liniowy, plus DWIE warstwy zabezpieczeń przed uszkodzonym czujnikiem/identyfikacją '
+                '(patrz mpc_wspolne._MPCMachineryMixinZabezpieczony i notatki/algorytmy/mpc.md): 1) odrzuca '
+                'dopasowanie SOPDT, jeśli autotest() ucięty przedwcześnie (np. przez obciążony odczyt HRT) trafił '
+                'w dolne ograniczenia solvera identyfikacji - zostaje wtedy na bezpiecznym regulatorze P zamiast '
+                'planować na zdegenerowanym modelu; 2) krzyżowo weryfikuje BIEŻĄCY pomiar HRT z własną predykcją '
+                'modelu blokowego, odrzucając odczyt zbyt rozbieżny. Dodane 2026-09-15 po wykryciu w teście '
+                'awaryjności czujników (+157% energii pod HRT_bias dla mpc_liniowy), OBOK niezabezpieczonej wersji '
+                '- porównanie pokazuje wartość tych zabezpieczeń wprost.',
+        'bezpiecznik': True,
+        'typ': 'MPC (QP, model SOPDT blokowy, zabezpieczony)',
+        'cel': 'Funkcja ryzyka (Kalman) - optymalizacja trajektorii BEZ prognozy pogody, z kontrolą wiarygodności',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'Jak mpc_liniowy - O(1) na krok, skok co 900s (blok 15-min), plus stały narzut kontroli wiarygodności (porównanie skalarów)',
+        'flops_na_krok': 806,  # mpc_liniowy (800) + narzut _wiarygodny_pomiar_hrt (~6 FLOPs/krok, patrz mpc_wspolne.py).
+        'zlozonosc_pamieciowa': 'O(1) (bufor kroczący) + bufory autotestu/modelu blokowego',
+        'pamiec_przyblizona_mb': 3.0,
+    },
+    'mpc_prognoza_pogody_zabezpieczony': {
+        'modul': 'funkcja_mpc_prognoza_zabezpieczony',
+        'klasa': 'KontrolerMPCPrognozaZabezpieczony',
+        'metoda': 'mpc_prognoza_zabezpieczony',
+        'opis': 'Jak mpc_prognoza_pogody, plus te same DWIE warstwy zabezpieczeń co mpc_liniowy_zabezpieczony '
+                '(patrz tam pełny opis) - mpc_wspolne._MPCMachineryMixinZabezpieczony.',
+        'bezpiecznik': True,
+        'typ': 'MPC (QP, model SOPDT blokowy, zabezpieczony)',
+        'cel': 'Funkcja ryzyka (Kalman) + prognoza opadu - optymalizacja trajektorii Z prognozą pogody, z kontrolą wiarygodności',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'Jak mpc_prognoza_pogody - O(1) na krok, skok co 900s (blok 15-min), plus stały narzut kontroli wiarygodności',
+        'flops_na_krok': 811,  # mpc_prognoza_pogody (805) + narzut _wiarygodny_pomiar_hrt (~6 FLOPs/krok).
+        'zlozonosc_pamieciowa': 'O(1) (bufor kroczący) + bufory autotestu/modelu blokowego',
+        'pamiec_przyblizona_mb': 3.0,
+    },
+    'mpc_miekkie_ograniczenia_zabezpieczony': {
+        'modul': 'funkcja_mpc_miekkie_zabezpieczony',
+        'klasa': 'KontrolerMPCMiekkieZabezpieczony',
+        'metoda': 'mpc_miekkie_zabezpieczony',
+        'opis': 'Jak mpc_miekkie_ograniczenia, plus te same DWIE warstwy zabezpieczeń co mpc_liniowy_zabezpieczony '
+                '(patrz tam pełny opis) - mpc_wspolne._MPCMachineryMixinZabezpieczony.',
+        'bezpiecznik': True,
+        'typ': 'MPC (QP, model SOPDT blokowy, bariera wykładnicza, zabezpieczony)',
+        'cel': 'Funkcja ryzyka (Kalman) + prognoza opadu - optymalizacja trajektorii z barierą bezpieczeństwa, z kontrolą wiarygodności',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'Jak mpc_miekkie_ograniczenia - O(1) na krok, skok co 900s (blok 15-min), plus stały narzut kontroli wiarygodności',
+        'flops_na_krok': 811,  # mpc_miekkie_ograniczenia (805) + narzut _wiarygodny_pomiar_hrt (~6 FLOPs/krok).
+        'zlozonosc_pamieciowa': 'O(1) (bufor kroczący) + bufory autotestu/modelu blokowego',
+        'pamiec_przyblizona_mb': 3.0,
+    },
+    'mpc_binarny': {
+        'modul': 'funkcja_mpc_binarny',
+        'klasa': 'KontrolerMPCBinarny',
+        'metoda': 'mpc_binarny',
+        'opis': 'Jak mpc_liniowy (ten sam model blokowy, cel, częstotliwość przeplanowania co 900s), ale moc na '
+                'blok OGRANICZONA do {0%, 100%} (przekaźnik załącz/wyłącz, jak większość pozostałych algorytmów '
+                'projektu) zamiast wyjścia ciągłego - rozwiązywane WYCZERPUJĄCYM przeszukaniem 2^8=256 kombinacji '
+                '(dokładne optimum globalne, nie relaksacja+zaokrąglenie) wg tej samej funkcji kosztu co wariant '
+                'ciągły (mpc_wspolne._MPCMachineryMixinBinarny). Porównanie z mpc_liniowy (RÓŻNI SIĘ WYŁĄCZNIE '
+                'dopuszczalnym zbiorem mocy) izoluje czysty koszt dyskretyzacji na przekaźnik binarny względem '
+                'regulacji ciągłej (SSR/PWM). Dodane 2026-09-15 na życzenie użytkownika - funkcja_mpc_binarny.py.',
+        'bezpiecznik': True,
+        'typ': 'MPC (przeszukanie wyczerpujące, model SOPDT blokowy, wyjście binarne)',
+        'cel': 'Funkcja ryzyka (Kalman) - optymalizacja trajektorii BEZ prognozy pogody, moc binarna',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) na krok, skok co 900s (blok 15-min) - przeszukanie wyczerpujące 2^8=256 kombinacji, każda O(horyzont)',
+        'flops_na_krok': 850,  # SZACUNEK po analogii do mpc_liniowy (800) - 256 ewaluacji _koszt_mpc amortyzowane na 900s vs. kilkadziesiąt iteracji L-BFGS-B, ten sam rząd wielkości.
+        'zlozonosc_pamieciowa': 'O(1) (bufor kroczący) + bufory autotestu/modelu blokowego',
+        'pamiec_przyblizona_mb': 3.0,
+    },
+    'mpc_prognoza_binarny': {
+        'modul': 'funkcja_mpc_prognoza_binarny',
+        'klasa': 'KontrolerMPCPrognozaBinarny',
+        'metoda': 'mpc_prognoza_binarny',
+        'opis': 'Jak mpc_prognoza_pogody (ten sam model blokowy, prognoza Kalmana, cel z prognozą opadu), ale moc '
+                'na blok OGRANICZONA do {0%, 100%} zamiast wyjścia ciągłego - rozwiązywane wyczerpującym '
+                'przeszukaniem 2^8=256 kombinacji, jak mpc_binarny (patrz tam pełne uzasadnienie). Dodane '
+                '2026-09-15, żeby porównanie ciągłe-vs-binarne było kompletne na wszystkich 3 wariantach MPC, nie '
+                'tylko mpc_liniowy/mpc_binarny - funkcja_mpc_prognoza_binarny.py.',
+        'bezpiecznik': True,
+        'typ': 'MPC (przeszukanie wyczerpujące, model SOPDT blokowy, wyjście binarne)',
+        'cel': 'Funkcja ryzyka (Kalman) + prognoza opadu - optymalizacja trajektorii Z prognozą pogody, moc binarna',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) na krok, skok co 900s (blok 15-min) - przeszukanie wyczerpujące 2^8=256 kombinacji, każda O(horyzont)',
+        'flops_na_krok': 855,  # SZACUNEK po analogii do mpc_binarny (850) + narzut prognozy opadu jak mpc_prognoza_pogody vs mpc_liniowy (+5).
+        'zlozonosc_pamieciowa': 'O(1) (bufor kroczący) + bufory autotestu/modelu blokowego',
+        'pamiec_przyblizona_mb': 3.0,
+    },
+    'mpc_miekkie_binarny': {
+        'modul': 'funkcja_mpc_miekkie_binarny',
+        'klasa': 'KontrolerMPCMiekkieBinarny',
+        'metoda': 'mpc_miekkie_binarny',
+        'opis': 'Jak mpc_miekkie_ograniczenia (ten sam model blokowy, prognoza, bariera wykładnicza), ale moc na '
+                'blok OGRANICZONA do {0%, 100%} zamiast wyjścia ciągłego - rozwiązywane wyczerpującym '
+                'przeszukaniem 2^8=256 kombinacji, jak mpc_binarny (patrz tam pełne uzasadnienie). Dodane '
+                '2026-09-15, żeby porównanie ciągłe-vs-binarne było kompletne na wszystkich 3 wariantach MPC - '
+                'funkcja_mpc_miekkie_binarny.py.',
+        'bezpiecznik': True,
+        'typ': 'MPC (przeszukanie wyczerpujące, model SOPDT blokowy, bariera wykładnicza, wyjście binarne)',
+        'cel': 'Funkcja ryzyka (Kalman) + prognoza opadu - optymalizacja trajektorii z barierą bezpieczeństwa, moc binarna',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) na krok, skok co 900s (blok 15-min) - przeszukanie wyczerpujące 2^8=256 kombinacji, każda O(horyzont)',
+        'flops_na_krok': 855,  # SZACUNEK po analogii do mpc_prognoza_binarny (identyczna struktura kosztu, jedyna różnica to inny wzór skalarny w _kara_bezpieczenstwa_mpc).
+        'zlozonosc_pamieciowa': 'O(1) (bufor kroczący) + bufory autotestu/modelu blokowego',
+        'pamiec_przyblizona_mb': 3.0,
+    },
     'fuzzy_ryzyko_3_opad': {
         'modul': 'funkcja_fuzzy_ryzyko_3_opad',
         'klasa': 'KontrolerFuzzyRyzyko3Opad',
@@ -584,6 +691,47 @@ ALGORYTMY = {
         'adaptacyjny': True,
         'zlozonosc_czasowa': 'O(1) amortyzowane, skok co 300 kroków (Kalman + cyfrowy bliźniak) + rzadkie wywołania prognozy opadu',
         'flops_na_krok': 507,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu',
+        'pamiec_przyblizona_mb': 21.0,
+    },
+    'fuzzy_ryzyko_adaptacyjny': {
+        'modul': 'funkcja_fuzzy_ryzyko_adaptacyjny',
+        'klasa': 'KontrolerFuzzyRyzykoAdaptacyjny',
+        'metoda': 'fuzzy_ryzyko_adaptacyjny',
+        'opis': 'Jak fuzzy_ryzyko_1 (cel z funkcji ryzyka, wykonawczo silnik FL1), plus AUTOMATYCZNE STROJENIE '
+                'progów funkcji przynależności silnika rozmytego (prog_chlodno/prog_mrozno/prog_lodowato_dolny/'
+                'prog_lodowato_gorny - patrz silniki_fuzzy.wnioskowanie_fl_parametryzowane), tą samą metodą '
+                '"perturb-and-observe" co risk_function_pid_auto (co 7 dni: koszt = zużyta moc + kara za '
+                'przekroczony próg śniegu/lodu/przegrzania; spadek kosztu -> kontynuacja kierunku, wzrost -> '
+                'odwrócenie) - odpowiednik SIMC dla progów rozmytych, którego fuzzy_ryzyko_1 explicite nie ma. '
+                'Dodane 2026-09-15 na życzenie użytkownika - funkcja_fuzzy_ryzyko_adaptacyjny.py.',
+        'bezpiecznik': True,
+        'typ': 'Fuzzy logic (FL1, adaptacyjne progi)',
+        'cel': 'Funkcja ryzyka (Kalman)',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) na krok (silnik FL1, 40 FLOPs) + O(1) amortyzowane, skok co 7 dni (aktualizacja 4 progów)',
+        'flops_na_krok': 45,  # Silnik FL1 (40) + rejestracja kar/całki strojenia (~5, amortyzowane jak w risk_function_pid_auto).
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu + log strojenia',
+        'pamiec_przyblizona_mb': 21.0,
+    },
+    'fuzzy_ryzyko_agresywny': {
+        'modul': 'funkcja_fuzzy_ryzyko_agresywny',
+        'klasa': 'KontrolerFuzzyRyzykoAgresywny',
+        'metoda': 'fuzzy_ryzyko_agresywny',
+        'opis': 'Jak fuzzy_ryzyko_1 (cel z funkcji ryzyka, wykonawczo silnik FL1), ale z WYRAŹNIE OSTRZEJSZĄ '
+                'reakcją na pogarszające się warunki (silniki_fuzzy.wnioskowanie_fl_agresywne) - zacieśnione '
+                'granice OK/chłodno/mroźno (1.5/3.5°C zamiast 3.0/6.0°C) i próg "lodowato" (-12/-8°C zamiast '
+                '-15/-12°C, pełna moc przy łagodniejszym mrozie), podniesiona moc pośrednia LOW/MED (50%/85% '
+                'zamiast 25%/60%) - ta sama matematyka Sugeno co FL1, inny kształt zbiorów rozmytych, bez '
+                'dodatkowych reguł/mnożników po fakcie. Dodane 2026-09-15 na życzenie użytkownika ("mocniej '
+                'karaj... żeby znacznie mocniej reagował na warunki złe") jako OSOBNY algorytm - '
+                'funkcja_fuzzy_ryzyko_agresywny.py.',
+        'bezpiecznik': True,
+        'typ': 'Fuzzy logic (FL1, agresywny)',
+        'cel': 'Funkcja ryzyka (Kalman)',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) na krok (silnik FL1, 40 FLOPs)',
+        'flops_na_krok': 40,
         'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu',
         'pamiec_przyblizona_mb': 21.0,
     },

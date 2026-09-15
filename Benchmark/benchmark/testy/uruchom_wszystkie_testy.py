@@ -48,7 +48,7 @@ _DOMYSLNE_SZYBKIE = {
 }
 
 # test_szum_wielu_czujnikow.py to 29 scenariuszy x wszystkie algorytmy x N
-# lokalizacji - PRZY WSZYSTKICH 37 algorytmach nawet 2 lokalizacje x 2 dni to
+# lokalizacji - PRZY WSZYSTKICH 42 algorytmach nawet 2 lokalizacje x 2 dni to
 # ~1740 zadań (za dużo na "szybki" przebieg, zmierzone ~0.19 core-min/zadanie
 # przy 2-dniowym oknie -> rzędu godzin). Ograniczone do garstki reprezentatywnych
 # algorytmów (po jednym z głównych rodzin) WYŁĄCZNIE na czas tego jednego etapu
@@ -56,7 +56,7 @@ _DOMYSLNE_SZYBKIE = {
 # też czytane przez główny przegląd, który MA sprawdzić wszystkie 37).
 _ALGORYTMY_SZUM_SZYBKI = 'algorytm_z_normy,risk_function_pid,risk_function_pid_auto,fuzzy_ryzyko_2v2_opad,nauka_kary_opad'
 # Ta sama garstka reprezentatywnych algorytmów, z tego samego powodu, dla
-# test_wrazliwosc_dwie_lokalizacje.py (37 algorytmów x scenariusze x 2
+# test_wrazliwosc_dwie_lokalizacje.py (42 algorytmów x scenariusze x 2
 # lokalizacje x szum tak/nie też szybko rośnie - patrz komentarz wyżej).
 _ALGORYTMY_WRAZ_SZYBKI = _ALGORYTMY_SZUM_SZYBKI
 for _klucz, _wartosc in _DOMYSLNE_SZYBKIE.items():
@@ -64,7 +64,7 @@ for _klucz, _wartosc in _DOMYSLNE_SZYBKIE.items():
 
 # Krok sterowania osobny (test_wrazliwosc_kroku_sterowania.py czyta SZYNA_MAX_DNI
 # ogólne, ale chcemy go dodatkowo ograniczyć do 1 lokalizacji + 2 kroków, żeby
-# nie mnożyć czasu razy 44 lokalizacje x 5 kroków x 37 algorytmy).
+# nie mnożyć czasu razy 44 lokalizacje x 5 kroków x 42 algorytmy).
 os.environ.setdefault('SZYNA_KROKI_S', '10,60')
 
 ETAPY = [

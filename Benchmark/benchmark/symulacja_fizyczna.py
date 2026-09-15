@@ -333,7 +333,7 @@ def uruchom_kontroler(name, controller, method_name, df_1s, hrt_weather_all,
     # --- JAKOŚĆ REGULACJI (IAE/ISE/ITAE) - patrz notatki/IAE_ISE_ITAE.md po
     # pełny opis z przykładami. Liczone TYLKO na krokach, w których kontroler
     # zwrócił diagnostykę z 'target_temperature' ORAZ 'need_heat' True (czyli
-    # faktycznie DĄŻY do jakiegoś celu) - WSZYSTKIE 37 algorytmy mają teraz
+    # faktycznie DĄŻY do jakiegoś celu) - WSZYSTKIE 42 algorytmy mają teraz
     # taką diagnostykę (2026-09-02: nawet compute_control*/algorytm_z_normy -
     # cel = próg wyłączenia aktywnej gałęzi gdy grzeją; fuzzy_logic_* -
     # cel = ich stały T_ZADANA), więc pola te są None w stats TYLKO gdyby
@@ -549,7 +549,7 @@ def uruchom_kontroler(name, controller, method_name, df_1s, hrt_weather_all,
         # Rzeczywiście zmierzona liczba FLOPs wykonanych PRZEZ TEN kontroler w
         # TYM przebiegu (patrz rdzen_kontrolera.KontrolerBazowy._dodaj_flopy) -
         # None dla kontrolerów bez tego licznika (nie powinno się zdarzyć,
-        # wszystkie 37 algorytmy go mają, ale getattr na wszelki wypadek).
+        # wszystkie 42 algorytmy go mają, ale getattr na wszelki wypadek).
         'flops_rzeczywiste': getattr(controller, '_flops_licznik', None),
         # --- Jakość regulacji (patrz notatki/IAE_ISE_ITAE.md) - None tylko,
         # gdy w CAŁYM przebiegu nigdy nie wystąpił krok z need_heat=True

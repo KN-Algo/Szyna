@@ -2,7 +2,7 @@
 # slurm_krok_sterowania.sh
 #
 # Wrażliwość na krok sterowania (test_wrazliwosc_kroku_sterowania.py) w PEŁNEJ
-# skali: wszystkie 44 lokalizacje x WSZYSTKIE 37 algorytmy (domyślna lista rozszerzona
+# skali: wszystkie 44 lokalizacje x WSZYSTKIE 42 algorytmy (domyślna lista rozszerzona
 # 2026-09-03 z curatorowanej 6-tki na pełny rejestr, na życzenie użytkownika - "żeby
 # całość była bardziej miarodajna, nie tylko wybrane") x 5 kroków sterowania
 # (1/10/60/300/600s) x okno 30 dni = 7700 zadań.
@@ -10,7 +10,7 @@
 # KOSZT: zmierzone lokalnie (smoke test w ramach uruchom_wszystkie_testy.py,
 # 1 lokalizacja x 3 algorytmy [bez MPC] x 2 kroki, okno 3 dni) - ~0.13 core-min/zadanie.
 # Ekstrapolacja do pełnej skali (okno 30 dni, 10x) x 7700 zadań (~6x poprzedniej
-# liczby po rozszerzeniu z 6 na 37 algorytmy i z 43 na 44 lokalizacji) ≈ 167 core-h
+# liczby po rozszerzeniu z 6 na 42 algorytmy i z 43 na 44 lokalizacji) ≈ 167 core-h
 # szacunkowo - MPC nie zmierzone empirycznie osobno, ale QP na 8 zmiennych to
 # pojedyncze ms/rozwiązanie, więc rząd wielkości powinien zostać podobny.
 # --cpus-per-task=64 / --time=6:00:00 = 384 core-h - bezpieczny zapas (64
@@ -45,7 +45,7 @@ pip install --upgrade pip
 pip install -r "$SCRIPT_DIR/requirements.txt"
 
 # Celowo NIE ustawiamy SZYNA_ALGORYTMY_KROK/SZYNA_LOKALIZACJE/SZYNA_MAX_DNI -
-# domyślnie: WSZYSTKIE 37 algorytmy z rejestru, wszystkie 44 lokalizacje, okno 30 dni.
+# domyślnie: WSZYSTKIE 42 algorytmy z rejestru, wszystkie 44 lokalizacje, okno 30 dni.
 export SZYNA_FOLDER_WYNIKOW_KROK="$SCRIPT_DIR/wyniki/wrazliwosc_kroku"
 
 python testy/test_wrazliwosc_kroku_sterowania.py

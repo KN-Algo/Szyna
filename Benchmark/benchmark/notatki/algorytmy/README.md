@@ -1,6 +1,6 @@
 # Notatki per algorytm
 
-Jeden plik `.md` na każdy z 37 algorytmów zarejestrowanych w `Algorytmy/rejestr_algorytmow.py`
+Jeden plik `.md` na każdy z 45 algorytmów zarejestrowanych w `Algorytmy/rejestr_algorytmow.py`
 (`ALGORYTMY` dict) — opisuje jak dany algorytm liczy setpoint/moc, czym różni się od najbliższego
 "rodzeństwa", jakie ma własne stałe, i szacunek FLOPs/krok (pełny mechanizm liczenia FLOPs:
 [../FLOPs.md](../FLOPs.md)).
@@ -32,6 +32,8 @@ plik/klasa/metoda/typ/cel/adaptacyjny/bezpiecznik, sekcja "Jak działa", sekcja 
 - [risk_function_ladrc](adrc.md) — liniowe ADRC (Gao 2003, Extended State Observer) zamiast PID
 - [risk_function_nadrc](adrc.md) — nieliniowe ADRC (Han 2009, funkcja fal()) zamiast PID
 - [fuzzy_ryzyko_1](fuzzy_ryzyko_1.md) / [_2](fuzzy_ryzyko_2.md) / [_2v2](fuzzy_ryzyko_2v2.md) / [_3](fuzzy_ryzyko_3.md)
+- [fuzzy_ryzyko_adaptacyjny](fuzzy_ryzyko_adaptacyjny.md) — jak fuzzy_ryzyko_1, + automatyczne strojenie progów funkcji przynależności ("perturb-and-observe", odpowiednik SIMC dla logiki rozmytej)
+- [fuzzy_ryzyko_agresywny](fuzzy_ryzyko_agresywny.md) — jak fuzzy_ryzyko_1, ale zacieśnione progi + podniesiona moc pośrednia - reaguje mocniej i wcześniej na złe warunki (wyższa energia, mniej epizodów pod progiem bezpieczeństwa)
 
 ## Cel z funkcji ryzyka + prognoza opadu (przewidywanie_opadow.py)
 
@@ -51,5 +53,7 @@ plik/klasa/metoda/typ/cel/adaptacyjny/bezpiecznik, sekcja "Jak działa", sekcja 
 - [mpc_liniowy](mpc_liniowy.md) — QP na 8-blokowym horyzoncie 2h, zaburzenie (CRT) STAŁE (wariant kontrolny bez prognozy pogody)
 - [mpc_prognoza_pogody](mpc_prognoza_pogody.md) — jak wyżej, zaburzenie z prognozy Kalmana + cel z prognozą opadu (pełna wersja)
 - [mpc_miekkie_ograniczenia](mpc_miekkie_ograniczenia.md) — jak mpc_prognoza_pogody, ale bariera wykładnicza zamiast kary progowej za zbliżanie się do progu bezpieczeństwa
+- [mpc_binarny](mpc_binarny.md) / [mpc_prognoza_binarny](mpc_prognoza_binarny.md) / [mpc_miekkie_binarny](mpc_miekkie_binarny.md) — jak odpowiedniki bez przyrostka, ale moc na blok ograniczona do {0%,100%} (przekaźnik), rozwiązywane wyczerpującym przeszukaniem 2^8 kombinacji - kompletna macierz ciągłe×binarne dla wszystkich 3 wariantów MPC, mierzy czysty koszt dyskretyzacji względem regulacji ciągłej
+- [mpc_liniowy_zabezpieczony](mpc_liniowy_zabezpieczony.md) / [mpc_prognoza_pogody_zabezpieczony](mpc_prognoza_pogody_zabezpieczony.md) / [mpc_miekkie_ograniczenia_zabezpieczony](mpc_miekkie_ograniczenia_zabezpieczony.md) — jak odpowiedniki bez przyrostka, + dwie warstwy zabezpieczeń przed uszkodzonym czujnikiem/zdegenerowaną identyfikacją SOPDT (patrz diagnoza +157% energii pod HRT_bias w mpc_liniowy_zabezpieczony.md)
 - [histereza_pamiec_rosy](histereza_pamiec_rosy.md) — histereza + punkt rosy (polityka P_mem, Chiaradonna i in. 2021) - jedyny algorytm czytający PUNKT_ROSY_C, z pamięcią na wypadek zawieszonego odczytu
 - [predykcja_wygladzanie_prosta](predykcja_wygladzanie_prosta.md) — regulator na prognozie HRT wygładzaniem Holta (polityka P_pre, Chiaradonna i in. 2021), margines bezpieczeństwa samokalibrujący się z własnego błędu prognozy
