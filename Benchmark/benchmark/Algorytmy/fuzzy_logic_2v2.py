@@ -7,6 +7,7 @@
 # precip > 0.2 (nie > 0.0 jak w pozostałych trzech wariantach) - zgodnie z
 # oryginałem.
 
+from histereza_let1 import wylicz_poziom_ryzyka
 from silniki_fuzzy import wnioskowanie_fl2v2, binaryzuj
 
 
@@ -21,12 +22,12 @@ class KontrolerFuzzy2v2:
         hrt = float(row_data['HRT_temp_grzana'])
         precip = float(row_data['PRECIP_opad'])
         snow = float(row_data['SNOW_snieg'])
-
         jest_snieg = snow > 0.0
         jest_deszcz = precip > 0.2
 
         blad_T = self.T_ZADANA - hrt
-        wynik = wnioskowanie_fl2v2(blad_T, hrt, precip, jest_snieg, jest_deszcz)
+        ryzyko = wylicz_poziom_ryzyka(row_data)
+        wynik = wnioskowanie_fl2v2(blad_T, hrt, ryzyko, jest_snieg, jest_deszcz)
         self._flops_licznik += 48  # Silnik FL2v2 (4 funkcje przynależności + 7 reguł Sugeno).
         # Diagnostyka (do IAE/ISE/ITAE) - cel STAŁY (T_ZADANA), silnik dąży do niego
         # cały czas, więc need_heat=True zawsze (patrz fuzzy_logic_1.py).

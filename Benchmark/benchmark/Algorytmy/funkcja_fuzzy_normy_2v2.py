@@ -5,6 +5,7 @@
 # patrz funkcja_normy_wspolne.py.
 
 from funkcja_normy_wspolne import KontrolerNormyCiaglaBazowy
+from histereza_let1 import wylicz_poziom_ryzyka
 from silniki_fuzzy import wnioskowanie_fl2v2, binaryzuj
 
 
@@ -26,7 +27,8 @@ class KontrolerFuzzyNormy2v2(KontrolerNormyCiaglaBazowy):
             jest_snieg = snow > 0.0
             jest_deszcz = precip > 0.2
             blad_T = target_temperature - hrt_temp
-            wynik = wnioskowanie_fl2v2(blad_T, hrt_temp, precip, jest_snieg, jest_deszcz)
+            ryzyko = wylicz_poziom_ryzyka(row_data)
+            wynik = wnioskowanie_fl2v2(blad_T, hrt_temp, ryzyko, jest_snieg, jest_deszcz)
             power_percent = binaryzuj(wynik)
             self._dodaj_flopy(48)  # Silnik FL2v2 (7 reguł).
 

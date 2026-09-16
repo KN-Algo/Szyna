@@ -11,6 +11,16 @@
 # DOKŁADNIE to samo wnioskowanie - różnią się WYŁĄCZNIE źródłem celu (blad_T)
 # i tym, czy w ogóle trzeba grzać (need_heat).
 
+#Remove-Item Env:SZYNA_LOKALIZACJE -ErrorAction SilentlyContinue
+#>> Remove-Item Env:SZYNA_MAX_DNI -ErrorAction SilentlyContinue
+#>> Remove-Item Env:SZYNA_LICZBA_WATKOW -ErrorAction SilentlyContinue
+#>> 
+#>> $env:SZYNA_ALGORYTMY = "algorytm_z_normy,fuzzy_ryzyko_2v2,fuzzy_ryzyko_2v2_opad,fuzzy_logic_2v2,fuzzy_normy_2v2"
+#>> $env:SZYNA_WZNOW = "0"
+#>> $env:SZYNA_FOLDER_WYNIKOW = ".\wyniki\przeglad_fuzzy"
+#>> 
+#>> python testy\test_wszystkie_rownolegle.py
+
 # Singletony Sugeno (moc wyjściowa dla każdej reguły) - identyczne we wszystkich wariantach.
 MOC_OFF = 0.0
 MOC_LOW = 25.0
@@ -52,8 +62,8 @@ def trojkat(x, x0, x_srodek, x1):
 # zachowania dla istniejących algorytmów).
 PROG_CHLODNO_DOMYSLNY = 3.0
 PROG_MROZNO_DOMYSLNY = 6.0
-PROG_LODOWATO_DOLNY_DOMYSLNY = -15.0
-PROG_LODOWATO_GORNY_DOMYSLNY = -12.0
+PROG_LODOWATO_DOLNY_DOMYSLNY = -10.0
+PROG_LODOWATO_GORNY_DOMYSLNY = -7.0
 
 
 def wnioskowanie_fl_parametryzowane(blad_T, hrt, jest_snieg, jest_deszcz,
@@ -70,10 +80,15 @@ def wnioskowanie_fl_parametryzowane(blad_T, hrt, jest_snieg, jest_deszcz,
     bez duplikowania 6 reguł Sugeno. Wywołana z samymi domyślnymi wartościami
     daje DOKŁADNIE ten sam wynik co wnioskowanie_fl_podstawowe.
     """
+
+    if hrt >= 15.0:
+        return 0.0
+
     t_ok = rampa_malejaca(blad_T, 0.0, prog_chlodno)
     t_chlodno = trojkat(blad_T, 0.0, prog_chlodno, prog_mrozno)
     t_mrozno = rampa_rosnaca(blad_T, prog_chlodno, prog_mrozno)
     t_lodowato = rampa_malejaca(hrt, prog_lodowato_dolny, prog_lodowato_gorny)
+    t_goraco = rampa_rosnaca(hrt, 15.0, 20.0)
 
     opad_aktywny = 1.0 if (jest_snieg or jest_deszcz) else 0.0
     opad_brak = 1.0 if not (jest_snieg or jest_deszcz) else 0.0
@@ -84,10 +99,12 @@ def wnioskowanie_fl_parametryzowane(blad_T, hrt, jest_snieg, jest_deszcz,
     r4 = min(t_mrozno, opad_brak)
     r5 = min(t_mrozno, opad_aktywny)
     r6 = t_lodowato
+    r_goraco = t_goraco
 
-    licznik = (r1 * MOC_OFF + r2 * MOC_OFF + r3 * moc_med
-               + r4 * moc_low + r5 * MOC_HIGH + r6 * MOC_HIGH)
-    mianownik = r1 + r2 + r3 + r4 + r5 + r6
+    licznik = (r1 * MOC_OFF + r2 * MOC_OFF + r3 * MOC_MED
+               + r4 * MOC_LOW + r5 * MOC_HIGH + r6 * MOC_HIGH
+               + r_goraco * MOC_OFF)
+    mianownik = r1 + r2 + r3 + r4 + r5 + r6 + r_goraco
 
     if mianownik == 0:
         return 0.0
@@ -132,18 +149,20 @@ def wnioskowanie_fl_podstawowe(blad_T, hrt, jest_snieg, jest_deszcz):
     return wnioskowanie_fl_parametryzowane(blad_T, hrt, jest_snieg, jest_deszcz)
 
 
-def wnioskowanie_fl2v2(blad_T, hrt, precip, jest_snieg, jest_deszcz):
+def wnioskowanie_fl2v2(blad_T, hrt, ryzyko, jest_snieg, jest_deszcz):
     """
     Rdzeń wnioskowania FL2v2 (własny wariant) - 7 reguł: jak wyżej plus dodatkowa
-    reguła r7 (śnieg + chłodno -> HIGH), a próg "lodowato" zależy od intensywności
-    opadu R=precip zamiast być stały (-15..-12°C jak w podstawowym wariancie).
+    reguła r7 (śnieg + chłodno -> HIGH), a próg "lodowato" zależy od poziomu ryzyka.
     """
+    if hrt >= 25.0:
+        return 0.0
+
     t_ok = rampa_malejaca(blad_T, 0.0, 3.0)
     t_chlodno = trojkat(blad_T, 0.0, 3.0, 6.0)
     t_mrozno = rampa_rosnaca(blad_T, 3.0, 6.0)
-    r = precip
-    prog_lodowato = -15.0 + r * 10.0 + (5.0 if r > 8 else 0.0)
-    t_lodowato = rampa_malejaca(hrt, -15.0, prog_lodowato)
+    prog_lodowato = -10.0 + ryzyko*5.0 + (5.0 if ryzyko > 8 else 0)
+    t_lodowato = rampa_malejaca(hrt, -10.0, prog_lodowato)
+    t_goraco = rampa_rosnaca(hrt, 15.0, 20.0)
 
     opad_aktywny = 1.0 if (jest_snieg or jest_deszcz) else 0.0
     opad_brak = 1.0 if not (jest_snieg or jest_deszcz) else 0.0
@@ -155,10 +174,12 @@ def wnioskowanie_fl2v2(blad_T, hrt, precip, jest_snieg, jest_deszcz):
     r5 = min(t_mrozno, opad_aktywny)
     r6 = t_lodowato
     r7 = min(1.0 if jest_snieg else 0.0, t_chlodno)
+    r_goraco = t_goraco
 
     licznik = (r1 * MOC_OFF + r2 * MOC_OFF + r3 * MOC_MED + r4 * MOC_LOW
-               + r5 * MOC_HIGH + r6 * MOC_HIGH + r7 * MOC_HIGH)
-    mianownik = r1 + r2 + r3 + r4 + r5 + r6 + r7
+               + r5 * MOC_HIGH + r6 * MOC_HIGH + r7 * MOC_HIGH
+               + r_goraco * MOC_OFF)
+    mianownik = r1 + r2 + r3 + r4 + r5 + r6 + r7 + r_goraco
 
     if mianownik == 0:
         return 0.0

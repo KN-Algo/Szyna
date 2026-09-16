@@ -8,6 +8,33 @@
 from rdzen_kontrolera import KontrolerBazowy, RowData
 
 
+def wylicz_poziom_ryzyka(row_data) -> int:
+    """Wylicza bieżące ryzyko oblodzenia/zamarzania w skali 0-10."""
+    precip = float(row_data['PRECIP_opad'])
+    snow = float(row_data['SNOW_snieg'])
+    crt_temp = float(row_data['CRT_temp_niegrzana'])
+    at_temp = float(row_data['AT_temp_powietrza'])
+    humidity = float(row_data['RH_wilgotnosc_wzgledna'])
+    is_raining = precip > 0.0001
+    is_snowing = snow > 0.0001
+
+    if is_raining and (crt_temp <= 1.0 or at_temp <= 1.0):
+        return 10 if precip > 0.001 else 9
+    if is_snowing and crt_temp <= 2.0:
+        return 8 if snow > 0.001 else 7
+    if crt_temp <= 0.5 and humidity > 85.0:
+        return 6 if humidity > 95.0 else 5
+    if crt_temp <= -3.0:
+        return 4
+    if crt_temp <= 0.0:
+        return 3
+    if (is_raining or is_snowing) and crt_temp <= 3.0:
+        return 2
+    if at_temp <= 3.0:
+        return 1
+    return 0
+
+
 class KontrolerHisterezaLET1(KontrolerBazowy):
 
     def __init__(self, max_switches_per_day=12):
@@ -37,37 +64,7 @@ class KontrolerHisterezaLET1(KontrolerBazowy):
         """
         Metoda oceniająca ryzyko oblodzenia/zamarzania w skali od 0 do 10.
         """
-
-        # Progi detekcji opadu (wartości w mm/s bywają bardzo małe)
-        is_raining = self.row_data.precip > 0.0001
-        is_snowing = self.row_data.snow > 0.0001
-
-        # --- 10 & 9: MARZNĄCY DESZCZ (Krytyczne zagrożenie) ---
-        if is_raining and (self.row_data.crt_temp <= 1.0 or self.row_data.at_temp <= 1.0):
-            return 10 if self.row_data.precip > 0.001 else 9  # 10 dla ulewy, 9 dla mniejszego opadu
-
-        # --- 8 & 7: INTENSYWNY ŚNIEG (Wysokie zagrożenie zasypaniem/zablokowaniem) ---
-        if is_snowing and self.row_data.crt_temp <= 2.0:
-            return 8 if self.row_data.snow > 0.001 else 7    # 8 dla śnieżycy, 7 dla lekkiego śniegu
-
-        # --- 6 & 5: WILGOĆ I MRÓZ (Średnie zagrożenie - szron, szadź, gołoledź) ---
-        if self.row_data.crt_temp <= 0.5 and self.row_data.rh_humidity > 85.0:
-            return 6 if self.row_data.rh_humidity > 95.0 else 5       # 6 przy ekstremalnej wilgotności
-
-        # --- 4 & 3: SUCHY MRÓZ (Niskie/Średnie zagrożenie - profilaktyka przed wychłodzeniem stali) ---
-        if self.row_data.crt_temp <= -3.0:
-            return 4                           # Głęboki mróz, stal jest bardzo zimna
-        if self.row_data.crt_temp <= 0.0:
-            return 3                           # Lekki mróz wokół zera
-
-        # --- 2 & 1: POTENCJALNE ZAGROŻENIE (Niskie ryzyko) ---
-        if (is_raining or is_snowing) and self.row_data.crt_temp <= 3.0:
-            return 2                           # Opad przy lekkim plusie (może zaraz zamarznąć)
-        if self.row_data.at_temp <= 3.0:
-            return 1                           # Po prostu zimno, ale sucho i bez krytycznej wilgoci
-
-        # --- 0: PEŁNE BEZPIECZEŃSTWO ---
-        return 0
+        return wylicz_poziom_ryzyka(row_data)
 
     def compute_control(self, row_data):
         self.row_data = RowData()
