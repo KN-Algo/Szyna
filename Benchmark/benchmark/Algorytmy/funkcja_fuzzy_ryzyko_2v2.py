@@ -11,8 +11,10 @@ from silniki_fuzzy import wnioskowanie_fl2v2, binaryzuj
 
 
 class KontrolerFuzzyRyzyko2v2(KontrolerRyzykaBazowy):
+    def _autotest_startowy(self, row_data):
+        return False  # Wymusza natychmiastowe przejście do logiki rozmytej
 
-    def __init__(self, max_switches_per_day=12):
+    def __init__(self, max_switches_per_day=20):
         super().__init__()
         self.max_switches_per_day = max_switches_per_day
 
@@ -23,17 +25,24 @@ class KontrolerFuzzyRyzyko2v2(KontrolerRyzykaBazowy):
         hrt_temp = float(row_data['HRT_temp_grzana'])
         precip = float(row_data['PRECIP_opad'])
         snow = float(row_data['SNOW_snieg'])
+        at_temp = float(row_data['AT_temp_powietrza'])
         target_temperature, need_heat, reason, forecast_min_c, warmup_soon = \
             self._evaluate_risk_setpoint(row_data)
 
-        if not need_heat:
+        if hrt_temp < -10.0:
+            power_percent = 100.0
+        elif hrt_temp >= 6.0:
             power_percent = 0.0
+        elif hrt_temp >= 3.0 and at_temp < 0.0:
+            power_percent = 0.0
+        elif at_temp <= -15.0 and hrt_temp < 10.0:
+            power_percent = 100.0
         else:
             jest_snieg = snow > 0.0
             jest_deszcz = precip > 0.2
             blad_T = target_temperature - hrt_temp
             ryzyko = wylicz_poziom_ryzyka(row_data)
-            wynik = wnioskowanie_fl2v2(blad_T, hrt_temp, ryzyko, jest_snieg, jest_deszcz)
+            wynik = wnioskowanie_fl2v2(blad_T, hrt_temp, ryzyko, jest_snieg, jest_deszcz, at_temp)
             power_percent = binaryzuj(wynik)
             self._dodaj_flopy(48)  # Silnik FL2v2 (7 reguł).
 

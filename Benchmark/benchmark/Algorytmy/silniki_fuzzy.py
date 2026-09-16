@@ -11,16 +11,6 @@
 # DOKŁADNIE to samo wnioskowanie - różnią się WYŁĄCZNIE źródłem celu (blad_T)
 # i tym, czy w ogóle trzeba grzać (need_heat).
 
-#Remove-Item Env:SZYNA_LOKALIZACJE -ErrorAction SilentlyContinue
-#>> Remove-Item Env:SZYNA_MAX_DNI -ErrorAction SilentlyContinue
-#>> Remove-Item Env:SZYNA_LICZBA_WATKOW -ErrorAction SilentlyContinue
-#>> 
-#>> $env:SZYNA_ALGORYTMY = "algorytm_z_normy,fuzzy_ryzyko_2v2,fuzzy_ryzyko_2v2_opad,fuzzy_logic_2v2,fuzzy_normy_2v2"
-#>> $env:SZYNA_WZNOW = "0"
-#>> $env:SZYNA_FOLDER_WYNIKOW = ".\wyniki\przeglad_fuzzy"
-#>> 
-#>> python testy\test_wszystkie_rownolegle.py
-
 # Singletony Sugeno (moc wyjściowa dla każdej reguły) - identyczne we wszystkich wariantach.
 MOC_OFF = 0.0
 MOC_LOW = 25.0
@@ -54,12 +44,7 @@ def trojkat(x, x0, x_srodek, x1):
     return 1.0 - ((x - x_srodek) / (x1 - x_srodek))
 
 
-# Domyślne progi funkcji przynależności FL1 (patrz wnioskowanie_fl_parametryzowane) -
-# WYODRĘBNIONE z ciała funkcji (były hardcoded literałami) wyłącznie po to, żeby
-# funkcja_fuzzy_ryzyko_adaptacyjny.py mogło je stroić PER INSTANCJA, bez zmiany
-# zachowania FL1/FL2/FL3 (te dalej wołają wnioskowanie_fl_podstawowe, które
-# podstawia DOKŁADNIE te same wartości jako domyślne argumenty - zero zmiany
-# zachowania dla istniejących algorytmów).
+# Domyślne progi funkcji przynależności FL1
 PROG_CHLODNO_DOMYSLNY = 3.0
 PROG_MROZNO_DOMYSLNY = 6.0
 PROG_LODOWATO_DOLNY_DOMYSLNY = -10.0
@@ -74,11 +59,7 @@ def wnioskowanie_fl_parametryzowane(blad_T, hrt, jest_snieg, jest_deszcz,
                                      moc_low=MOC_LOW, moc_med=MOC_MED):
     """
     Jak wnioskowanie_fl_podstawowe, ale z progami funkcji przynależności ORAZ
-    singletonami mocy LOW/MED jako PARAMETRAMI zamiast literałów - pozwala:
-      - funkcja_fuzzy_ryzyko_adaptacyjny.py stroić progi online (patrz tam),
-      - funkcja_fuzzy_ryzyko_agresywny.py podnieść moc LOW/MED na stałe (patrz tam),
-    bez duplikowania 6 reguł Sugeno. Wywołana z samymi domyślnymi wartościami
-    daje DOKŁADNIE ten sam wynik co wnioskowanie_fl_podstawowe.
+    singletonami mocy LOW/MED jako PARAMETRAMI zamiast literałów.
     """
 
     if hrt >= 15.0:
@@ -111,23 +92,17 @@ def wnioskowanie_fl_parametryzowane(blad_T, hrt, jest_snieg, jest_deszcz,
     return licznik / mianownik
 
 
-# Progi/singletony AGRESYWNEGO wariantu (funkcja_fuzzy_ryzyko_agresywny.py) - patrz
-# tam pełne uzasadnienie. Idea: reaguj MOCNIEJ i WCZEŚNIEJ na pogarszające się
-# warunki niż FL1 podstawowy - NIE przez dodanie nowych reguł, tylko przez
-# ZACIEŚNIENIE stref przejścia OK->chłodno->mroźno (osiąga pełną moc przy
-# MNIEJSZYM błędzie/łagodniejszym mrozie) i PODNIESIENIE mocy pośrednich
-# (LOW/MED) - "chłodno"/"mroźno bez opadu" grzeją WYRAŹNIE mocniej niż domyślne
-# 25%/60%, zamiast liczyć na to, że błąd sam urośnie i przesunie regułę w górę.
-PROG_CHLODNO_AGRESYWNY = 1.5     # (domyślnie 3.0) - z "OK" do "chłodno" przy mniejszym błędzie.
-PROG_MROZNO_AGRESYWNY = 3.5      # (domyślnie 6.0) - pełne "mroźno" (i tym samym MOC_HIGH przy opadzie) dużo wcześniej.
-PROG_LODOWATO_DOLNY_AGRESYWNY = -12.0   # (domyślnie -15.0) - próg "lodowato" zaczyna się przy łagodniejszym mrozie.
-PROG_LODOWATO_GORNY_AGRESYWNY = -8.0    # (domyślnie -12.0) - pełna MOC_HIGH z powodu HRT osiągana dużo wcześniej.
-MOC_LOW_AGRESYWNA = 50.0        # (domyślnie 25.0)
-MOC_MED_AGRESYWNA = 85.0        # (domyślnie 60.0)
+# Progi/singletony AGRESYWNEGO wariantu
+PROG_CHLODNO_AGRESYWNY = 1.5
+PROG_MROZNO_AGRESYWNY = 3.5
+PROG_LODOWATO_DOLNY_AGRESYWNY = -12.0
+PROG_LODOWATO_GORNY_AGRESYWNY = -8.0
+MOC_LOW_AGRESYWNA = 50.0
+MOC_MED_AGRESYWNA = 85.0
 
 
 def wnioskowanie_fl_agresywne(blad_T, hrt, jest_snieg, jest_deszcz):
-    """Wariant FL1 reagujący MOCNIEJ i WCZEŚNIEJ na złe warunki - patrz stałe *_AGRESYWNY/A wyżej i funkcja_fuzzy_ryzyko_agresywny.py."""
+    """Wariant FL1 reagujący MOCNIEJ i WCZEŚNIEJ na złe warunki."""
     return wnioskowanie_fl_parametryzowane(
         blad_T, hrt, jest_snieg, jest_deszcz,
         prog_chlodno=PROG_CHLODNO_AGRESYWNY, prog_mrozno=PROG_MROZNO_AGRESYWNY,
@@ -137,32 +112,28 @@ def wnioskowanie_fl_agresywne(blad_T, hrt, jest_snieg, jest_deszcz):
 
 
 def wnioskowanie_fl_podstawowe(blad_T, hrt, jest_snieg, jest_deszcz):
-    """
-    Rdzeń wnioskowania współdzielony przez FL1/FL2/FL3 (identyczny w oryginałach) -
-    6 reguł Sugeno: OK/chłodno/mroźno x brak-opadu/opad + lodowato (niska HRT).
-    Zwraca surowy wynik (0-100), PRZED jakąkolwiek binaryzacją/PWM - to należy do
-    konkretnego wariantu wykonawczego (patrz klamra_fl1/binaryzuj/WykonawcaPWM).
-
-    Cienka otoczka nad wnioskowanie_fl_parametryzowane z domyślnymi progami -
-    zachowana dla wstecznej zgodności (FL1/FL2/FL3 wołają tę funkcję wprost).
-    """
+    """Rdzeń wnioskowania współdzielony przez FL1/FL2/FL3."""
     return wnioskowanie_fl_parametryzowane(blad_T, hrt, jest_snieg, jest_deszcz)
 
 
-def wnioskowanie_fl2v2(blad_T, hrt, ryzyko, jest_snieg, jest_deszcz):
-    """
-    Rdzeń wnioskowania FL2v2 (własny wariant) - 7 reguł: jak wyżej plus dodatkowa
-    reguła r7 (śnieg + chłodno -> HIGH), a próg "lodowato" zależy od poziomu ryzyka.
-    """
-    if hrt >= 25.0:
+
+def wnioskowanie_fl2v2(blad_T, hrt, ryzyko, jest_snieg, jest_deszcz, at_temp):
+    """Rdzeń wnioskowania FL2v2."""
+    if hrt >= 6.0:
+        return 0.0
+    if hrt >= 3.0 and at_temp < 0.0:
+        return 0.0
+    if hrt <= -10.0:
+        return 100.0
+    if at_temp >= 3.0:
         return 0.0
 
     t_ok = rampa_malejaca(blad_T, 0.0, 3.0)
     t_chlodno = trojkat(blad_T, 0.0, 3.0, 6.0)
     t_mrozno = rampa_rosnaca(blad_T, 3.0, 6.0)
-    prog_lodowato = -10.0 + ryzyko*5.0 + (5.0 if ryzyko > 8 else 0)
+    prog_lodowato = -10.0 + ryzyko*3.0 + (5.0 if ryzyko > 8 else 0)
     t_lodowato = rampa_malejaca(hrt, -10.0, prog_lodowato)
-    t_goraco = rampa_rosnaca(hrt, 15.0, 20.0)
+    t_goraco = rampa_rosnaca(hrt, 10.0, 15.0)
 
     opad_aktywny = 1.0 if (jest_snieg or jest_deszcz) else 0.0
     opad_brak = 1.0 if not (jest_snieg or jest_deszcz) else 0.0
@@ -175,11 +146,19 @@ def wnioskowanie_fl2v2(blad_T, hrt, ryzyko, jest_snieg, jest_deszcz):
     r6 = t_lodowato
     r7 = min(1.0 if jest_snieg else 0.0, t_chlodno)
     r_goraco = t_goraco
+    r_powietrze_mrozi = 1.0 if (at_temp < -5.0) else 0.0
 
-    licznik = (r1 * MOC_OFF + r2 * MOC_OFF + r3 * MOC_MED + r4 * MOC_LOW
-               + r5 * MOC_HIGH + r6 * MOC_HIGH + r7 * MOC_HIGH
+    licznik = (
+                r1 * MOC_OFF
+               + r2 * MOC_OFF
+               + r3 * (MOC_MED if ryzyko < 5.0 else MOC_HIGH)
+               + r4 * (MOC_LOW if ryzyko < 5.0 else MOC_MED)
+               + r5 * MOC_HIGH
+               + r6 * MOC_HIGH
+               + r7 * MOC_HIGH
+               + r_powietrze_mrozi * (MOC_MED if ryzyko < 5.0 else MOC_HIGH)
                + r_goraco * MOC_OFF)
-    mianownik = r1 + r2 + r3 + r4 + r5 + r6 + r7 + r_goraco
+    mianownik = r1 + r2 + r3 + r4 + r5 + r6 + r7 + r_powietrze_mrozi + r_goraco
 
     if mianownik == 0:
         return 0.0
@@ -195,9 +174,30 @@ def klamra_fl1(wynik):
     return wynik
 
 
-def binaryzuj(wynik):
-    """Twarde 0/100% wg progu 50%, jak w Fuzzy_Logic_2.py / Fuzzy_Logic_2v2.py."""
-    return 100.0 if wynik >= 50.0 else 0.0
+def binaryzuj(wynik, stan_poprzedni=0.0, prog_dolny=40.0, prog_gorny=50.0):
+    """
+    Binaryzacja z histerezą (20% / 40%):
+    - Jeśli stanem poprzednim było ON (>= 100.0) i wynik > 20.0 -> zostaje ON (100.0).
+    - Jeśli stanem poprzednim było OFF (< 100.0) i wynik < 40.0 -> zostaje OFF (0.0).
+    """
+    if stan_poprzedni >= 100.0:
+        return 100.0 if wynik > prog_dolny else 0.0
+    else:
+        return 100.0 if wynik >= prog_gorny else 0.0
+
+
+class BinaryzatorHistereza:
+    """
+    Zapamiętuje stan między krokami symulacji (klasa stanowa dla binaryzacji z histerezą).
+    """
+    def __init__(self, prog_dolny=40.0, prog_gorny=50.0, stan_poczatkowy=0.0):
+        self.prog_dolny = prog_dolny
+        self.prog_gorny = prog_gorny
+        self.stan = stan_poczatkowy
+
+    def krok(self, wynik):
+        self.stan = binaryzuj(wynik, self.stan, self.prog_dolny, self.prog_gorny)
+        return self.stan
 
 
 class WykonawcaPWM:

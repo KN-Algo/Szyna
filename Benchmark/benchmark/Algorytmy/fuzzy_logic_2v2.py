@@ -12,8 +12,10 @@ from silniki_fuzzy import wnioskowanie_fl2v2, binaryzuj
 
 
 class KontrolerFuzzy2v2:
+    def _autotest_startowy(self, row_data):
+        return False  # Wymusza natychmiastowe przejście do logiki rozmytej
 
-    def __init__(self, t_zadana=3.0, max_switches_per_day=12, **kwargs):
+    def __init__(self, t_zadana=3.0, max_switches_per_day=20, **kwargs):
         self.T_ZADANA = t_zadana
         self.max_switches_per_day = max_switches_per_day
         self._flops_licznik = 0  # Licznik RZECZYWISTYCH FLOPs - patrz rdzen_kontrolera.KontrolerBazowy._dodaj_flopy.
@@ -22,12 +24,22 @@ class KontrolerFuzzy2v2:
         hrt = float(row_data['HRT_temp_grzana'])
         precip = float(row_data['PRECIP_opad'])
         snow = float(row_data['SNOW_snieg'])
+        at_temp = float(row_data['AT_temp_powietrza'])
         jest_snieg = snow > 0.0
         jest_deszcz = precip > 0.2
 
         blad_T = self.T_ZADANA - hrt
         ryzyko = wylicz_poziom_ryzyka(row_data)
-        wynik = wnioskowanie_fl2v2(blad_T, hrt, ryzyko, jest_snieg, jest_deszcz)
+        if hrt < -10.0:
+            wynik = 100.0
+        elif hrt >= 6.0:
+            wynik = 0.0
+        elif hrt >= 3.0 and at_temp < 0.0:
+            wynik = 0.0
+        elif at_temp <= -15.0 and hrt < 10.0:
+            wynik = 100.0
+        else:
+            wynik = wnioskowanie_fl2v2(blad_T, hrt, ryzyko, jest_snieg, jest_deszcz, at_temp)
         self._flops_licznik += 48  # Silnik FL2v2 (4 funkcje przynależności + 7 reguł Sugeno).
         # Diagnostyka (do IAE/ISE/ITAE) - cel STAŁY (T_ZADANA), silnik dąży do niego
         # cały czas, więc need_heat=True zawsze (patrz fuzzy_logic_1.py).
