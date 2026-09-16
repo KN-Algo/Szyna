@@ -119,11 +119,11 @@ def wnioskowanie_fl_podstawowe(blad_T, hrt, jest_snieg, jest_deszcz):
 
 def wnioskowanie_fl2v2(blad_T, hrt, ryzyko, jest_snieg, jest_deszcz, at_temp):
     """Rdzeń wnioskowania FL2v2."""
-    if hrt >= 6.0:
+    if hrt >= 3.0:
         return 0.0
-    if hrt >= 3.0 and at_temp < 0.0:
+    if hrt > 0.0 and at_temp < 0.0:
         return 0.0
-    if hrt <= -10.0:
+    if hrt <= -8.0:
         return 100.0
     if at_temp >= 3.0:
         return 0.0
