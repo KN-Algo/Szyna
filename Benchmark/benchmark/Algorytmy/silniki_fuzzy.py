@@ -123,6 +123,8 @@ def wnioskowanie_fl2v2(blad_T, hrt, ryzyko, jest_snieg, jest_deszcz, at_temp):
         return 0.0
     if hrt > 0.0 and at_temp < 0.0:
         return 0.0
+    if hrt > -5.0 and at_temp <= -10.0:
+        return 0.0
     if hrt <= -8.0:
         return 100.0
     if at_temp >= 3.0:
@@ -131,10 +133,10 @@ def wnioskowanie_fl2v2(blad_T, hrt, ryzyko, jest_snieg, jest_deszcz, at_temp):
     t_ok = rampa_malejaca(blad_T, 0.0, 3.0)
     t_chlodno = trojkat(blad_T, 0.0, 3.0, 6.0)
     t_mrozno = rampa_rosnaca(blad_T, 3.0, 6.0)
+    t_goraco = rampa_rosnaca(blad_T, 6.0, 9.0)
     prog_lodowato = -10.0 + ryzyko*3.0 + (5.0 if ryzyko > 8 else 0)
     t_lodowato = rampa_malejaca(hrt, -10.0, prog_lodowato)
-    t_goraco = rampa_rosnaca(hrt, 10.0, 15.0)
-
+    
     opad_aktywny = 1.0 if (jest_snieg or jest_deszcz) else 0.0
     opad_brak = 1.0 if not (jest_snieg or jest_deszcz) else 0.0
 
