@@ -11,14 +11,17 @@
 # jednoczesnej rezerwacji CPU-godzin i nie trafić na QOSGrpCPUMinutesLimit
 # (patrz historia tego problemu w AGENTS.md).
 #
-# Kolejność:
+# Kolejność (lokalizacje ograniczone do 4 najbardziej ekstremalnych - sodankyla,
+# murmansk, quebec_city, norylsk - 2026-09-15, patrz uzasadnienie w
+# slurm_pelny_przeglad.sh - koszty core-h niżej ZNACZNIE spadły względem
+# poprzednich 44-lokalizacyjnych szacunków):
 #   1) slurm_smoke_test.sh                  (~30 min, weryfikacja środowiska)
-#   2) slurm_pelny_przeglad.sh               (pełny przegląd, 44 lok. x wszystkie 42 algorytmy - główny wynik, ~576 core-h budżetu)
-#   3) slurm_wrazliwosc_transmitancji.sh     (wrażliwość transmitancji, 44 lok. x 8 scenariuszy, do ~4608 core-h budżetu)
-#   4) slurm_wrazliwosc_2lok.sh              (pogłębiona wrażliwość + szum, 2 lok. x 14 scenariuszy x szum, ~68-102 core-h)
-#   5) slurm_krok_sterowania.sh              (wrażliwość na krok sterowania, 44 lok. x WSZYSTKIE 42 algorytmy x 5 kroków, ~157 core-h)
-#   6) slurm_szum_wielu_czujnikow.sh         (szum wielu czujników, 10 lok. x 29 scenariuszy x wszystkie 42 algorytmy, ~155 core-h)
-#   7) slurm_test_awarie.sh                  (odporność na awarie czujników, ~32 core-h)
+#   2) slurm_pelny_przeglad.sh               (pełny przegląd, 4 lok. x wszystkie 45 algorytmów - główny wynik, ~21-43 core-h, ceiling 64h)
+#   3) slurm_wrazliwosc_transmitancji.sh     (wrażliwość transmitancji, 4 lok. x 8 scenariuszy, ~170-340 core-h, ceiling 512h)
+#   4) slurm_wrazliwosc_2lok.sh              (pogłębiona wrażliwość + szum, 2 lok. [abisko+ojmiakon, niezmienione] x 14 scenariuszy x szum, ~88-131 core-h)
+#   5) slurm_krok_sterowania.sh              (wrażliwość na krok sterowania, 4 lok. x WSZYSTKIE 45 algorytmów x 5 kroków, ~16 core-h, ceiling 64h)
+#   6) slurm_szum_wielu_czujnikow.sh         (szum wielu czujników, 4 lok. JAWNE x 29 scenariuszy x wszystkie 45 algorytmów, ~70 core-h, ceiling 96h)
+#   7) slurm_test_awarie.sh                  (odporność na awarie czujników, 1 lok. [abisko, niezmieniona], ~kilka core-h)
 #
 # WAŻNE: ten plik uruchamiasz BEZPOŚREDNIO (`bash`), NIE przez `sbatch` - to
 # zwykły skrypt powłoki, który tylko SKŁADA 7 zadań do kolejki z zależnościami

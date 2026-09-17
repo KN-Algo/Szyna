@@ -7,10 +7,13 @@
 ## Jak działa
 
 Jak [fuzzy_ryzyko_2.md](fuzzy_ryzyko_2.md) (cel z kaskady funkcji ryzyka, autotest + bliźniak), ale
-wykonawczo silnik `silniki_fuzzy.wnioskowanie_fl2v2` (7 reguł, dodatkowa reguła śnieg+chłodno, próg
-"lodowato" zależny od intensywności opadu — patrz [fuzzy_logic_2v2.md](fuzzy_logic_2v2.md) po pełny
-opis różnic silnika) zamiast podstawowego 6-regułowego. Próg wykrycia deszczu w tym wariancie:
-`precip > 0.2` (nie `> 0.0` jak w reszcie rodziny) — spójnie z oryginalnym `fuzzy_logic_2v2.py`.
+wykonawczo silnik `silniki_fuzzy.wnioskowanie_fl2v2` (7 reguł, dodatkowa reguła śnieg+chłodno) zamiast
+podstawowego 6-regułowego. Próg "lodowato" zależy tu DYNAMICZNIE od poziomu ryzyka wyznaczonego przez
+TĘ SAMĄ funkcję ryzyka, która ustaliła cel grzania (`self._poziom_ryzyka_funkcji(reason)`, skala 0-4 wg
+priorytetów `_evaluate_risk_setpoint`) — POPRAWKA 2026-09-15, patrz
+[fuzzy_logic_2v2.md](fuzzy_logic_2v2.md) po pełny opis różnic silnika. Próg wykrycia deszczu w tym
+wariancie: `precip > 0.2` (nie `> 0.0` jak w reszcie rodziny) — spójnie z oryginalnym
+`fuzzy_logic_2v2.py`.
 
 ## FLOPs
 

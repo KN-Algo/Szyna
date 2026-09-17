@@ -7,8 +7,11 @@
 ## Jak działa
 
 Jak [fuzzy_normy_2.md](fuzzy_normy_2.md) (cel z progów normy LET-1, wyjście binarne), ale wykonawczo
-silnik `wnioskowanie_fl2v2` (7 reguł, próg "lodowato" zależny od intensywności opadu) — patrz
-[fuzzy_logic_2v2.md](fuzzy_logic_2v2.md) po opis różnicy silnika.
+silnik `wnioskowanie_fl2v2` (7 reguł). Ten kontroler NIE dziedziczy po funkcji ryzyka, więc wołany jest
+BEZ parametru `poziom_ryzyka` — próg "lodowato" jest tu STAŁY -15.0/-12.0°C (jak w wariancie
+podstawowym FL1), w przeciwieństwie do `fuzzy_ryzyko_2v2`, gdzie próg zależy dynamicznie od poziomu
+ryzyka — patrz [fuzzy_logic_2v2.md](fuzzy_logic_2v2.md) po pełny opis różnicy silnika (POPRAWKA
+2026-09-15).
 
 ## FLOPs
 

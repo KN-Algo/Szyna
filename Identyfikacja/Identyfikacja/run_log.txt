@@ -1,0 +1,91 @@
+==========================================================================================
+IDENTYFIKACJA MISO - dodatkowy skrypt (nie modyfikuje skryptów referencyjnych)
+==========================================================================================
+Wczytano log: 200791 próbek ALGOp1, 200791 ALGOp2, 8746 ALGOp3 (moc).
+Zakres czasu: 2026-04-15 11:19:33.317000  ->  2026-05-06 11:58:02.822000
+Wykryto 2 okien testu skokowego (IndOn->koniec trybu ręcznego):
+    2026-04-22 06:40:47.567000  ->  2026-04-22 08:00:45.860000   (80.0 min)
+    2026-04-30 06:38:03.387000  ->  2026-04-30 08:00:04.659000   (82.0 min)
+Dołączono wiatr/nasłonecznienie z Open-Meteo (Wrocław Popowice) - 200791/200791 próbek pokrytych.
+
+Dane kanału MOCY: 480 próbek (okno 2026-04-22 06:40:47.567000 -> 2026-04-22 08:00:45.860000).
+Dane kanałów POGODOWYCH: 164338 próbek (dni bez testu skokowego).
+
+==============================================================================
+ILE JEST W TYCH DANYCH MOMENTÓW, GDZIE GRZANIE JEST ZNANE?
+  Cały log:                         21.03 dni
+  Moc (PWRL) w ogóle LOGOWANA:       162.0 min = 0.535% całego logu
+    okno 2026-04-22: grzanie AKTYWNE (PWR>0) w 4359/4359 = 100.0% próbek TEGO okna (cały czas praktycznie załączone - to wymuszony test skokowy, nie ma tu fazy 'wyłączone')
+    okno 2026-04-30: grzanie AKTYWNE (PWR>0) w 4388/4399 = 99.7% próbek TEGO okna (cały czas praktycznie załączone - to wymuszony test skokowy, nie ma tu fazy 'wyłączone')
+  Reszta logu (20.91 dni, 99.5%): stan grzania NIEZNANY (niezalogowany poza trybem ręcznym IndOn).
+  WNIOSEK: model MISO z kanałem mocy (niżej) jest wiarygodny WYŁĄCZNIE
+  w tym krótkim oknie testu skokowego. Zachowanie w DŁUGIM okresie
+  (tygodnie, gdy moc nie jest znana) opisuje OSOBNY model, wyłącznie
+  na podstawie pogody (bez mocy) - patrz sekcja 'MODEL DŁUGOTERMINOWY' niżej.
+==============================================================================
+UWAGA: kanał SNOW jest stały (brak wariancji w danych) - pominięty w identyfikacji.
+
+--- Przesiewanie: kanał MOCY (PWR -> HRT) ---
+[Identyfikacja] [------------------------------]   1.3%  (1/75)  ETA     2s  PWR/FOLP                                                    [Identyfikacja] [------------------------------]   2.7%  (2/75)  ETA     4s  PWR/FOLP_Z                                                  [Identyfikacja] [#-----------------------------]   4.0%  (3/75)  ETA     5s  PWR/SOSP                                                    [Identyfikacja] [#-----------------------------]   5.3%  (4/75)  ETA     6s  PWR/SOSP_Z                                                  [Identyfikacja] [##----------------------------]   6.7%  (5/75)  ETA     6s  PWR/TOSP                                                    [Identyfikacja] [##----------------------------]   8.0%  (6/75)  ETA     7s  PWR/FOSP                                                    [Identyfikacja] [##----------------------------]   9.3%  (7/75)  ETA    57s  PWR/FOLPD (L-search x41)                                    [Identyfikacja] [###---------------------------]  10.7%  (8/75)  ETA    65s  PWR/FOLPD_Z (L-search x41)                                  [Identyfikacja] [###---------------------------]  12.0%  (9/75)  ETA   179s  PWR/SOSPD (L-search x41)                                    [Identyfikacja] [####--------------------------]  13.3%  (10/75)  ETA   283s  PWR/TOSPD (L-search x41)                                    
+--- Przesiewanie: kanał AT -> HRT ---
+[Identyfikacja] [####--------------------------]  14.7%  (11/75)  ETA   260s  AT/I                                                        [Identyfikacja] [####--------------------------]  16.0%  (12/75)  ETA   236s  AT/FO                                                       [Identyfikacja] [#####-------------------------]  17.3%  (13/75)  ETA   215s  AT/FO_Z                                                     [Identyfikacja] [#####-------------------------]  18.7%  (14/75)  ETA   198s  AT/SO                                                       [Identyfikacja] [######------------------------]  20.0%  (15/75)  ETA   186s  AT/SO_Z                                                     [Identyfikacja] [######------------------------]  21.3%  (16/75)  ETA   172s  AT/TO                                                       [Identyfikacja] [######------------------------]  22.7%  (17/75)  ETA   175s  AT/FOD (L-search x19)                                       [Identyfikacja] [#######-----------------------]  24.0%  (18/75)  ETA   191s  AT/SOD (L-search x19)                                       C:\Users\ostro\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\scipy\signal\_ltisys.py:599: BadCoefficients: Badly conditioned filter coefficients (numerator): the results may be meaningless
+  self.num, self.den = normalize(*system)
+C:\Users\ostro\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\scipy\signal\_lti_conversion.py:74: BadCoefficients: Badly conditioned filter coefficients (numerator): the results may be meaningless
+  num, den = normalize(num, den)   # Strips zeros, checks arrays
+
+  Najlepszy dla AT: FO_Z (adj R²=0.9691)
+
+--- Przesiewanie: kanał DPT -> HRT ---
+[Identyfikacja] [#######-----------------------]  25.3%  (19/75)  ETA   182s  DPT/I                                                       [Identyfikacja] [########----------------------]  26.7%  (20/75)  ETA   170s  DPT/FO                                                      [Identyfikacja] [########----------------------]  28.0%  (21/75)  ETA   161s  DPT/FO_Z                                                    [Identyfikacja] [########----------------------]  29.3%  (22/75)  ETA   154s  DPT/SO                                                      [Identyfikacja] [#########---------------------]  30.7%  (23/75)  ETA   146s  DPT/SO_Z                                                    [Identyfikacja] [#########---------------------]  32.0%  (24/75)  ETA   138s  DPT/TO                                                      [Identyfikacja] [##########--------------------]  33.3%  (25/75)  ETA   139s  DPT/FOD (L-search x19)                                      [Identyfikacja] [##########--------------------]  34.7%  (26/75)  ETA   146s  DPT/SOD (L-search x19)                                      
+  Najlepszy dla DPT: I (adj R²=-1.8690)
+
+--- Przesiewanie: kanał RH -> HRT ---
+[Identyfikacja] [##########--------------------]  36.0%  (27/75)  ETA   140s  RH/I                                                        [Identyfikacja] [###########-------------------]  37.3%  (28/75)  ETA   133s  RH/FO                                                       [Identyfikacja] [###########-------------------]  38.7%  (29/75)  ETA   126s  RH/FO_Z                                                     [Identyfikacja] [############------------------]  40.0%  (30/75)  ETA   119s  RH/SO                                                       [Identyfikacja] [############------------------]  41.3%  (31/75)  ETA   114s  RH/SO_Z                                                     [Identyfikacja] [############------------------]  42.7%  (32/75)  ETA   108s  RH/TO                                                       [Identyfikacja] [#############-----------------]  44.0%  (33/75)  ETA   114s  RH/FOD (L-search x19)                                       [Identyfikacja] [#############-----------------]  45.3%  (34/75)  ETA   118s  RH/SOD (L-search x19)                                       
+  Najlepszy dla RH: SO_Z (adj R²=-0.2214)
+
+--- Przesiewanie: kanał PRESS -> HRT ---
+[Identyfikacja] [##############----------------]  46.7%  (35/75)  ETA   113s  PRESS/I                                                     [Identyfikacja] [##############----------------]  48.0%  (36/75)  ETA   108s  PRESS/FO                                                    [Identyfikacja] [##############----------------]  49.3%  (37/75)  ETA   102s  PRESS/FO_Z                                                  [Identyfikacja] [###############---------------]  50.7%  (38/75)  ETA    97s  PRESS/SO                                                    [Identyfikacja] [###############---------------]  52.0%  (39/75)  ETA    93s  PRESS/SO_Z                                                  [Identyfikacja] [################--------------]  53.3%  (40/75)  ETA    88s  PRESS/TO                                                    [Identyfikacja] [################--------------]  54.7%  (41/75)  ETA    88s  PRESS/FOD (L-search x19)                                    [Identyfikacja] [################--------------]  56.0%  (42/75)  ETA   100s  PRESS/SOD (L-search x19)                                    
+  Najlepszy dla PRESS: FO_Z (adj R²=-0.0030)
+
+--- Przesiewanie: kanał WIATR -> HRT ---
+[Identyfikacja] [#################-------------]  57.3%  (43/75)  ETA    96s  WIATR/I                                                     [Identyfikacja] [#################-------------]  58.7%  (44/75)  ETA    91s  WIATR/FO                                                    [Identyfikacja] [##################------------]  60.0%  (45/75)  ETA    86s  WIATR/FO_Z                                                  [Identyfikacja] [##################------------]  61.3%  (46/75)  ETA    81s  WIATR/SO                                                    [Identyfikacja] [##################------------]  62.7%  (47/75)  ETA    77s  WIATR/SO_Z                                                  [Identyfikacja] [###################-----------]  64.0%  (48/75)  ETA    73s  WIATR/TO                                                    [Identyfikacja] [###################-----------]  65.3%  (49/75)  ETA    70s  WIATR/FOD (L-search x19)                                    [Identyfikacja] [####################----------]  66.7%  (50/75)  ETA    70s  WIATR/SOD (L-search x19)                                    
+  Najlepszy dla WIATR: I (adj R²=-0.5831)
+
+--- Przesiewanie: kanał NASLONECZNIENIE -> HRT ---
+[Identyfikacja] [####################----------]  68.0%  (51/75)  ETA    66s  NASLONECZNIENIE/I                                           [Identyfikacja] [####################----------]  69.3%  (52/75)  ETA    62s  NASLONECZNIENIE/FO                                          [Identyfikacja] [#####################---------]  70.7%  (53/75)  ETA    58s  NASLONECZNIENIE/FO_Z                                        [Identyfikacja] [#####################---------]  72.0%  (54/75)  ETA    55s  NASLONECZNIENIE/SO                                          [Identyfikacja] [######################--------]  73.3%  (55/75)  ETA    52s  NASLONECZNIENIE/SO_Z                                        [Identyfikacja] [######################--------]  74.7%  (56/75)  ETA    48s  NASLONECZNIENIE/TO                                          [Identyfikacja] [######################--------]  76.0%  (57/75)  ETA    47s  NASLONECZNIENIE/FOD (L-search x19)                          [Identyfikacja] [#######################-------]  77.3%  (58/75)  ETA    47s  NASLONECZNIENIE/SOD (L-search x19)                          
+  Najlepszy dla NASLONECZNIENIE: FO_Z (adj R²=0.5607)
+
+--- Przesiewanie: kanał PRECIP -> HRT ---
+[Identyfikacja] [#######################-------]  78.7%  (59/75)  ETA    44s  PRECIP/I                                                    [Identyfikacja] [########################------]  80.0%  (60/75)  ETA    41s  PRECIP/FO                                                   [Identyfikacja] [########################------]  81.3%  (61/75)  ETA    37s  PRECIP/FO_Z                                                 [Identyfikacja] [########################------]  82.7%  (62/75)  ETA    34s  PRECIP/SO                                                   [Identyfikacja] [#########################-----]  84.0%  (63/75)  ETA    31s  PRECIP/SO_Z                                                 [Identyfikacja] [#########################-----]  85.3%  (64/75)  ETA    28s  PRECIP/TO                                                   [Identyfikacja] [##########################----]  86.7%  (65/75)  ETA    27s  PRECIP/FOD (L-search x19)                                   [Identyfikacja] [##########################----]  88.0%  (66/75)  ETA    24s  PRECIP/SOD (L-search x19)                                   
+  Najlepszy dla PRECIP: I (adj R²=-0.7394)
+
+
+==============================================================================
+MODEL DŁUGOTERMINOWY (bez kanału mocy - moc nieznana poza oknem testu)
+  Rozpiętość danych: 21.0 dni (164338 próbek)
+  Najlepszy kanał:   AT / model FO_Z
+  R²=0.9691  adj R²=0.9691  RMSE=1.5667°C
+  UWAGA: to dopasowanie opisuje zachowanie CAŁEGO układu zamkniętego
+  (pogoda -> ew. automatyczne grzanie -> HRT), NIE czystej fizyki bez
+  grzania - stan grzania w tym okresie jest nieznany (patrz wyżej).
+==============================================================================
+  UWAGA: NASLONECZNIENIE pominięty w MISO - w oknie testu skokowego prawie STAŁY (odchylenie std 6.26 = 1.4% jego długoterminowej zmienności) - współliniowy z mocą (też stałą w tym oknie), dołączenie fałszywie 'kradnie' wpływ mocy. Jego samodzielny wynik z długiego okna zostaje w tabeli.
+
+--- Budowa wspólnego modelu MISO ---
+Kanały włączone do modelu MISO (adj R² SISO > 0.05): ['PWR', 'AT']
+[Identyfikacja] [##############################] 100.0%  (76/75)  ETA    -2s  model MISO (wszystkie kanały)                               
+
+MODEL MISO: R²=0.9991  adj R²=0.9990  RMSE=0.3548°C  AIC=-980.63
+[Identyfikacja] [##############################] 100.0%  (77/75)  ETA    -5s  ablacja: bez kanału PWR                                     
+[Identyfikacja] [##############################] 100.0%  (78/75)  ETA    -7s  ablacja: bez kanału AT                                      
+
+WPŁYW PARAMETRÓW NA MODEL MISO (ΔR² po usunięciu kanału, malejąco):
+  PWR      ΔR²=0.2366  Δadj R²=0.2385
+  AT       ΔR²=0.0014  Δadj R²=0.0014
+
+Zapisano Excel: D:\Pulpit\KN ALGO\Szyna_2\Identyfikacja\wyniki_identyfikacja\wyniki_identyfikacji_miso.xlsx
+Zapisano tabelę: D:\Pulpit\KN ALGO\Szyna_2\Identyfikacja\wyniki_identyfikacja\wyniki_identyfikacji_miso.csv
+Zapisano wpływ parametrów: D:\Pulpit\KN ALGO\Szyna_2\Identyfikacja\wyniki_identyfikacja\wplyw_parametrow.csv
+Wykresy zapisane w: D:\Pulpit\KN ALGO\Szyna_2\Identyfikacja\wyniki_identyfikacja
+
+GOTOWE.

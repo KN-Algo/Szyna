@@ -26,7 +26,10 @@ class KontrolerFuzzyNormy2v2(KontrolerNormyCiaglaBazowy):
             jest_snieg = snow > 0.0
             jest_deszcz = precip > 0.2
             blad_T = target_temperature - hrt_temp
-            wynik = wnioskowanie_fl2v2(blad_T, hrt_temp, precip, jest_snieg, jest_deszcz)
+            # poziom_ryzyka nie podawany - cel liczony z normy LET-1, nie z funkcji
+            # ryzyka, więc próg "lodowato" jest stały -15/-12°C (patrz
+            # silniki_fuzzy.wnioskowanie_fl2v2).
+            wynik = wnioskowanie_fl2v2(blad_T, hrt_temp, jest_snieg, jest_deszcz)
             power_percent = binaryzuj(wynik)
             self._dodaj_flopy(48)  # Silnik FL2v2 (7 reguł).
 

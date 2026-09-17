@@ -3,9 +3,14 @@
 #
 # ANALIZA WRAŻLIWOŚCI na niepewność modelu obiektu (transmitancja GRZANIA,
 # SOPDT K/T1/T2/L - patrz symulacja_fizyczna.przygotuj_modele_stanowe): PEŁNY
-# przegląd (44 lokalizacje x 42 algorytmy, pełny zakres dat) powtórzony dla 8
+# przegląd (4 lokalizacje x 45 algorytmów, pełny zakres dat - lokalizacje
+# ograniczone 2026-09-15, patrz SZYNA_LOKALIZACJE niżej) powtórzony dla 8
 # scenariuszy, w których PRAWDZIWY symulowany obiekt (nie założenia żadnego
-# algorytmu) ma zaburzone parametry względem nominalnych:
+# algorytmu) ma zaburzone parametry względem nominalnych. Adaptacyjne algorytmy
+# same identyfikują zaburzony obiekt przez autotest (cyfrowy bliźniak) -
+# NIE wymaga to żadnej specjalnej obsługi przy mniejszej liczbie lokalizacji,
+# autotest liczy się osobno dla każdej lokalizacji niezależnie od tego, ile
+# ich jest w danym przebiegu:
 #
 #   0) nominal        - bez zaburzenia (referencja/baseline)
 #   1) K+5%           - wzmocnienie grzałki +5%
@@ -26,15 +31,16 @@
 #
 # KOSZT: to jest 8x pełny przegląd (patrz slurm_pelny_przeglad.sh) - KAŻDY z 8
 # elementów tablicy (--array=0-7) to OSOBNE zadanie SLURM z WŁASNĄ rezerwacją
-# cpus x czas (nie dzielą jednej puli) - przy --cpus-per-task=64/--time=12:00:00
-# to 768 CPU-h NA ELEMENT (podniesione z 48 rdzeni na życzenie użytkownika
-# 2026-09-07, żeby liczyło się szybciej - rzeczywista praca się nie zmienia,
-# tylko czas ściany), razem do 6144 CPU-h dla całej tablicy, jeśli
-# wszystkie 8 ruszyłoby jednocześnie. W praktyce QOS i tak dopuści tylko tyle
-# jednocześnie, ile pozwala dostępny budżet (service-balance) - reszta
-# poczeka w kolejce (status PD, powód QOSGrpCPUMinutesLimit) i wystartuje
-# automatycznie, gdy wcześniejsze się skończą i zwolnią rezerwację - to
-# NORMALNE, nie błąd, nie trzeba nic ręcznie robić.
+# cpus x czas (nie dzielą jednej puli) - przy --cpus-per-task=64/--time=01:00:00
+# to 64 CPU-h ceiling NA ELEMENT (ZMNIEJSZONE 2026-09-15 razem z ograniczeniem
+# lokalizacji do 4 - poprzednio 768h/element przy 44 lokalizacjach), razem do
+# 512 CPU-h dla całej tablicy, jeśli wszystkie 8 ruszyłoby jednocześnie -
+# realny koszt szacunkowo ~170-340 CPU-h razem (patrz przelicznik przy --time
+# wyżej). W praktyce QOS i tak dopuści tylko tyle jednocześnie, ile pozwala
+# dostępny budżet (service-balance) - reszta poczeka w kolejce (status PD,
+# powód QOSGrpCPUMinutesLimit) i wystartuje automatycznie, gdy wcześniejsze
+# się skończą i zwolnią rezerwację - to NORMALNE, nie błąd, nie trzeba nic
+# ręcznie robić.
 #
 # Wyniki każdego scenariusza lądują w OSOBNYM podfolderze
 # wyniki/wrazliwosc_transmitancji/<scenariusz>/ (własny PRZEGLAD_ZBIORCZY.csv +
@@ -42,7 +48,7 @@
 # CSV pozwala je później bezpiecznie scalić w jedną analizę porównawczą.
 #
 # UWAGA: SZYNA_ZAPISZ_CSV_SZCZEGOLOWE=0 (ustawione niżej) - przy 8 scenariuszach
-# x 44 lokalizacje x 42 algorytmów szczegółowe CSV per (lokalizacja, algorytm)
+# x 4 lokalizacje x 45 algorytmów szczegółowe CSV per (lokalizacja, algorytm)
 # to tysiące zbędnych plików (nieużywanych przez żaden z dwóch generatorów
 # Excela - patrz komentarz w test_wszystkie_rownolegle.py). Liczy się tylko
 # PRZEGLAD_ZBIORCZY.csv -> Podsumowanie_wynikow.xlsx per scenariusz, potem
@@ -62,10 +68,18 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=64
 #SBATCH --mem=1000G
-#SBATCH --time=12:00:00
+#SBATCH --time=01:00:00
 #SBATCH -p lem-cpu
 #SBATCH --array=0-7
 #SBATCH --output=szyna_wrazliwosc_%A_%a.log
+# --time ZMNIEJSZONE 2026-09-15 (lokalizacje ograniczone do 4, patrz
+# SZYNA_LOKALIZACJE niżej) - 64 rdzenie x 1h = 64 CPU-h ceiling NA ELEMENT
+# tablicy (razem do 512 core-h dla całej tablicy 8 elementów, jeśli wszystkie
+# ruszyłyby jednocześnie). Realny koszt per element szacunkowo ~21-43 core-h
+# (192-384 core-h oryginalne x 4/44 lok. x 45/37 alg.), razem ~170-340 core-h
+# dla całej tablicy - WIELOKROTNIE mniej niż poprzednie 768h/element, dzięki
+# czemu ta tablica bezpiecznie mieści się w budżecie konta na raz (nie trzeba
+# już zlecać jej osobno/na koniec, jak wcześniej przy 44 lokalizacjach).
 
 set -euo pipefail
 
@@ -95,9 +109,11 @@ esac
 
 echo "Scenariusz: $SZYNA_SCENARIUSZ (K${SZYNA_PERTURB_K:+}% T1${SZYNA_PERTURB_T1:+}%)"
 
-# Celowo NIE ustawiamy SZYNA_MAX_DNI/SZYNA_LOKALIZACJE/SZYNA_ALGORYTMY -
-# pełny zakres dat, wszystkie 44 lokalizacje, wszystkie 42 algorytmy (zgodnie
-# z decyzją użytkownika - patrz uzasadnienie kosztu w nagłówku pliku).
+# Celowo NIE ustawiamy SZYNA_MAX_DNI/SZYNA_ALGORYTMY - pełny zakres dat,
+# wszystkie algorytmy. SZYNA_LOKALIZACJE ograniczone do 4 (2026-09-15, na
+# życzenie użytkownika - jak w slurm_pelny_przeglad.sh, patrz tam pełne
+# uzasadnienie wyboru tych 4 lokalizacji).
+export SZYNA_LOKALIZACJE="sodankyla_60min_2025,murmansk_60min_2025,quebec_city_60min_2025,norylsk_60min_2025"
 export SZYNA_FOLDER_WYNIKOW="$SCRIPT_DIR/wyniki/wrazliwosc_transmitancji/$SZYNA_SCENARIUSZ"
 export SZYNA_ZAPISZ_CSV_SZCZEGOLOWE=0
 

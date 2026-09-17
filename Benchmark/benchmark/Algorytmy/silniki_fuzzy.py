@@ -132,18 +132,33 @@ def wnioskowanie_fl_podstawowe(blad_T, hrt, jest_snieg, jest_deszcz):
     return wnioskowanie_fl_parametryzowane(blad_T, hrt, jest_snieg, jest_deszcz)
 
 
-def wnioskowanie_fl2v2(blad_T, hrt, precip, jest_snieg, jest_deszcz):
+def wnioskowanie_fl2v2(blad_T, hrt, jest_snieg, jest_deszcz, poziom_ryzyka=None):
     """
     Rdzeń wnioskowania FL2v2 (własny wariant) - 7 reguł: jak wyżej plus dodatkowa
-    reguła r7 (śnieg + chłodno -> HIGH), a próg "lodowato" zależy od intensywności
-    opadu R=precip zamiast być stały (-15..-12°C jak w podstawowym wariancie).
+    reguła r7 (śnieg + chłodno -> HIGH), a próg "lodowato" zależy od poziomu
+    RYZYKA (funkcja_ryzyka_wspolne.KontrolerRyzykaBazowy._poziom_ryzyka_funkcji,
+    skala 0-4 wg priorytetów TEJ SAMEJ funkcji ryzyka, która wyznaczyła cel
+    grzania - patrz notatki/algorytmy/fuzzy_logic_2v2.md) zamiast być stały
+    -15..-12°C jak w podstawowym wariancie FL1.
+
+    poziom_ryzyka=None (domyślnie) - próg WRACA do stałych -15/-12°C
+    (PROG_LODOWATO_*_DOMYSLNY), identycznie jak FL1 - to jedyna opcja dla
+    fuzzy_logic_2v2/fuzzy_normy_2v2, które NIE dziedziczą po klasie funkcji
+    ryzyka i nie mają skąd wziąć tej liczby. Gdy podane (int 0-4, TYLKO
+    fuzzy_ryzyko_2v2/fuzzy_ryzyko_2v2_opad - wywołane zawsze z need_heat=True,
+    więc 0 w praktyce się nie zdarza): prog_lodowato_gorny = -15+poziom_ryzyka
+    (+3 dodatkowo przy poziom_ryzyka=4, marznący deszcz) - przy poziomie 3
+    (śnieg) wraca DOKŁADNIE do domyślnego -12.0, przy poziomie 4 (marznący
+    deszcz, najwyższe zagrożenie) skacze dalej do -8.0.
     """
     t_ok = rampa_malejaca(blad_T, 0.0, 3.0)
     t_chlodno = trojkat(blad_T, 0.0, 3.0, 6.0)
     t_mrozno = rampa_rosnaca(blad_T, 3.0, 6.0)
-    r = precip
-    prog_lodowato = -15.0 + r * 10.0 + (5.0 if r > 8 else 0.0)
-    t_lodowato = rampa_malejaca(hrt, -15.0, prog_lodowato)
+    if poziom_ryzyka is None:
+        prog_lodowato_gorny = PROG_LODOWATO_GORNY_DOMYSLNY
+    else:
+        prog_lodowato_gorny = -15.0 + poziom_ryzyka + (3.0 if poziom_ryzyka >= 4 else 0.0)
+    t_lodowato = rampa_malejaca(hrt, PROG_LODOWATO_DOLNY_DOMYSLNY, prog_lodowato_gorny)
 
     opad_aktywny = 1.0 if (jest_snieg or jest_deszcz) else 0.0
     opad_brak = 1.0 if not (jest_snieg or jest_deszcz) else 0.0

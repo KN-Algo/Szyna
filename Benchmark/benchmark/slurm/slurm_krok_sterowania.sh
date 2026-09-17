@@ -28,9 +28,12 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=64
 #SBATCH --mem=500G
-#SBATCH --time=6:00:00
+#SBATCH --time=01:00:00
 #SBATCH -p lem-cpu
 #SBATCH --output=szyna_krok_sterowania_%j.log
+# --time ZMNIEJSZONE 2026-09-15 (lokalizacje ograniczone do 4, patrz
+# SZYNA_LOKALIZACJE niżej) - 64 rdzenie x 1h = 64 CPU-h ceiling, realny koszt
+# szacunkowo ~16 core-h (167 core-h oryginalne x 4/44 lok. x 45/42 alg.).
 
 set -euo pipefail
 
@@ -44,8 +47,10 @@ source "$HOME/szyna_venv/bin/activate"
 pip install --upgrade pip
 pip install -r "$SCRIPT_DIR/requirements.txt"
 
-# Celowo NIE ustawiamy SZYNA_ALGORYTMY_KROK/SZYNA_LOKALIZACJE/SZYNA_MAX_DNI -
-# domyślnie: WSZYSTKIE 42 algorytmy z rejestru, wszystkie 44 lokalizacje, okno 30 dni.
+# Celowo NIE ustawiamy SZYNA_ALGORYTMY_KROK/SZYNA_MAX_DNI - WSZYSTKIE algorytmy
+# z rejestru, okno 30 dni. SZYNA_LOKALIZACJE ograniczone do 4 (2026-09-15, jak
+# w slurm_pelny_przeglad.sh - patrz tam pełne uzasadnienie wyboru).
+export SZYNA_LOKALIZACJE="sodankyla_60min_2025,murmansk_60min_2025,quebec_city_60min_2025,norylsk_60min_2025"
 export SZYNA_FOLDER_WYNIKOW_KROK="$SCRIPT_DIR/wyniki/wrazliwosc_kroku"
 
 python testy/test_wrazliwosc_kroku_sterowania.py

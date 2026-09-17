@@ -33,7 +33,10 @@ class KontrolerFuzzyRyzyko2v2Opad(KontrolerRyzykaOpadBazowy):
             jest_snieg = snow > 0.0
             jest_deszcz = precip > 0.2
             blad_T = target_temperature - hrt_temp
-            wynik = wnioskowanie_fl2v2(blad_T, hrt_temp, precip, jest_snieg, jest_deszcz)
+            # poziom_ryzyka Z TEJ SAMEJ funkcji ryzyka, która wyznaczyła cel (reason
+            # identyfikuje priorytet 1-4) - patrz _poziom_ryzyka_funkcji.
+            poziom_ryzyka = self._poziom_ryzyka_funkcji(reason)
+            wynik = wnioskowanie_fl2v2(blad_T, hrt_temp, jest_snieg, jest_deszcz, poziom_ryzyka)
             power_percent = binaryzuj(wynik)
             self._dodaj_flopy(48)  # Silnik FL2v2 (7 reguł).
 

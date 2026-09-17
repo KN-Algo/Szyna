@@ -65,14 +65,15 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=64
 #SBATCH --mem=1000G
-#SBATCH --time=12:00:00
+#SBATCH --time=01:00:00
 #SBATCH -p lem-cpu
 #SBATCH --output=szyna_pelny_%j.log
-# UWAGA budżetu konta: 48 rdzeni x 12h = 576 CPU-h (patrz uzasadnienie w
-# komentarzu przy tym --time wyżej). Sprawdź dostępne CPU-h PRZED zleceniem
-# (service-balance --check-cpu) - jeśli budżet jest ciaśniejszy niż 576h,
-# zmniejsz --cpus-per-task/--time proporcjonalnie (SLURM i tak odrzuci
-# zgłoszenie, gdy iloczyn cpus x time przekroczy limit konta - QOSGrpCPUMinutesLimit).
+# UWAGA budżetu konta: 64 rdzenie x 1h = 64 CPU-h ceiling. ZMNIEJSZONE
+# 2026-09-15 na życzenie użytkownika - lokalizacje ograniczone do 4 najbardziej
+# ekstremalnych (patrz SZYNA_LOKALIZACJE niżej), więc realny koszt spadł z
+# ~192-384 core-h (44 lok. x 37 alg.) do szacunkowo ~21-43 core-h (4 lok. x 45
+# alg., proporcja 4/44 x 45/37) - --time z dużym zapasem (~1.5-3x), nie na styk.
+# Sprawdź dostępne CPU-h PRZED zleceniem (service-balance --check-cpu).
 
 set -euo pipefail
 
@@ -101,10 +102,19 @@ source "$HOME/szyna_venv/bin/activate"
 pip install --upgrade pip
 pip install -r "$SCRIPT_DIR/requirements.txt"
 
-# Celowo NIE ustawiamy SZYNA_MAX_DNI/SZYNA_LOKALIZACJE/SZYNA_ALGORYTMY -
-# domyślnie: pełny zakres dat, wszystkie lokalizacje, wszystkie algorytmy.
-# SZYNA_LICZBA_WATKOW też nie jest konieczne - autodetekcja złapie
-# SLURM_CPUS_PER_TASK ustawione przez --cpus-per-task powyżej.
+# Celowo NIE ustawiamy SZYNA_MAX_DNI/SZYNA_ALGORYTMY - pełny zakres dat,
+# wszystkie algorytmy. SZYNA_LICZBA_WATKOW też nie jest konieczne -
+# autodetekcja złapie SLURM_CPUS_PER_TASK ustawione przez --cpus-per-task wyżej.
+#
+# SZYNA_LOKALIZACJE ograniczone do 4 lokalizacji (2026-09-15, na życzenie
+# użytkownika - "zmniejsz lokalizacje, daj tylko 4 w których jest najzimniej
+# oraz jest najwięcej śniegu"): wybrane z pełnej listy 43 lokalizacji przez
+# POŁĄCZONY ranking (ranga wg min. temperatury powietrza + ranga wg sumy opadu
+# przy temp. <=1°C, zsumowane, najniższa suma wygrywa) - patrz obliczenie w
+# historii sesji. Sodankylä i Norylsk trafiają też do TOP8 najzimniejszych
+# osobno, Murmansk i Quebec City do TOP8 najbardziej śnieżnych osobno - te 4 to
+# najlepszy kompromis "zimno + śnieg naraz", nie tylko jedno z dwóch kryteriów.
+export SZYNA_LOKALIZACJE="sodankyla_60min_2025,murmansk_60min_2025,quebec_city_60min_2025,norylsk_60min_2025"
 export SZYNA_FOLDER_WYNIKOW="$SCRIPT_DIR/wyniki/przeglad_wielu_lokalizacji"
 
 # Ciężkie pliki (pełna trajektoria per (lokalizacja, algorytm) - ~44x37=1628

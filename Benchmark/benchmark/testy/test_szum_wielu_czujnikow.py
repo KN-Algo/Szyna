@@ -30,7 +30,10 @@
 # 7 czujników x 4 poziomy = 28 scenariuszy szumu + 1 'brak_awarii' (referencja) = 29.
 #
 # Sterowanie (zmienne środowiskowe):
-#   SZYNA_LICZBA_LOKALIZACJI_SZUM - ile losowych lokalizacji (domyślnie 10)
+#   SZYNA_LOKALIZACJE_SZUM        - JAWNA lista lokalizacji, przecinkami (np. "abisko_60min_2025,ojmiakon_60min_2025")
+#                                   - gdy ustawiona, WYŁĄCZA losowanie niżej (SZYNA_LICZBA_LOKALIZACJI_SZUM/SEED
+#                                   są ignorowane) - użyj, gdy chcesz KONKRETNE lokalizacje, nie losową próbkę.
+#   SZYNA_LICZBA_LOKALIZACJI_SZUM - ile losowych lokalizacji (domyślnie 10) - ignorowane, gdy SZYNA_LOKALIZACJE_SZUM ustawione.
 #   SZYNA_SEED_LOKALIZACJI_SZUM   - seed losowania lokalizacji (domyślnie 20260902 - stały, powtarzalny wybór)
 #   SZYNA_MAX_DNI_SZUM            - okno dni, najzimniejszy wycinek (domyślnie 10, jak test_awarie_czujnikow.py)
 #   SZYNA_KROK_S                  - krok symulacji [s] (domyślnie 10.0)
@@ -59,6 +62,10 @@ os.makedirs(FOLDER_WYNIKOW, exist_ok=True)
 
 LICZBA_LOKALIZACJI = int(os.environ.get('SZYNA_LICZBA_LOKALIZACJI_SZUM', '10'))
 SEED_LOKALIZACJI = int(os.environ.get('SZYNA_SEED_LOKALIZACJI_SZUM', '20260902'))
+_lok_env_szum = os.environ.get('SZYNA_LOKALIZACJE_SZUM')
+LOKALIZACJE_JAWNE_SZUM = (
+    [l.strip() for l in _lok_env_szum.split(',') if l.strip()] if _lok_env_szum else None
+)
 MAX_DNI = int(os.environ.get('SZYNA_MAX_DNI_SZUM', '10'))
 KROK_SYMULACJI_S = float(os.environ.get('SZYNA_KROK_S', '10.0'))
 MAX_SWITCHES_PER_DAY = 100
@@ -107,6 +114,8 @@ def wybierz_losowe_lokalizacje():
     wszystkie = sorted(
         os.path.splitext(n)[0] for n in os.listdir(FOLDER_POGODA) if n.endswith('.csv')
     )
+    if LOKALIZACJE_JAWNE_SZUM is not None:
+        return sorted(l for l in LOKALIZACJE_JAWNE_SZUM if l in wszystkie)
     rng = random.Random(SEED_LOKALIZACJI)
     return sorted(rng.sample(wszystkie, min(LICZBA_LOKALIZACJI, len(wszystkie))))
 

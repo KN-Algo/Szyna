@@ -251,6 +251,31 @@ class KontrolerRyzykaBazowy(KontrolerBazowy):
         self._dodaj_flopy(20)  # Priorytety 1-4 (porównania progów, kara za śnieg).
         return target_temperature, need_heat, reason, forecast_min_c, warmup_soon
 
+    def _poziom_ryzyka_funkcji(self, reason: str) -> int:
+        """
+        Numeryczny poziom ryzyka (0-4) na podstawie priorytetu decyzji, który
+        WŁAŚNIE podjęła _evaluate_risk_setpoint (patrz tam pełny opis
+        priorytetów 1-4) - identyfikowany przez tekst `reason`, żeby nie
+        duplikować logiki progów. Używane WYŁĄCZNIE przez
+        silniki_fuzzy.wnioskowanie_fl2v2 (dynamiczny próg "lodowato" w
+        fuzzy_ryzyko_2v2/fuzzy_ryzyko_2v2_opad - patrz
+        notatki/algorytmy/fuzzy_logic_2v2.md). Wołane TYLKO gdy need_heat=True
+        (4 gałęzie priorytetów 1-4), więc nie trzeba obsługiwać "brak zagrożenia".
+
+        Skala (rosnąco wg powagi): 1=suchy mróz, 2=ochrona przed floor/prognoza
+        mrozu, 3=śnieg/zalegająca pokrywa, 4=marznący deszcz (najwyższe
+        zagrożenie - grzanie bezwarunkowe).
+        """
+        if reason.startswith('marznący deszcz'):
+            return 4
+        if reason.startswith('zalegający śnieg') or reason == 'opad śniegu do wytopienia':
+            return 3
+        if reason.startswith('ochrona przed spadkiem HRT'):
+            return 2
+        if reason == 'suchy mróz':
+            return 1
+        return 0
+
 
 # ==========================================
 # WARIANT Z PROGNOZĄ OPADU (przewidywanie_opadow.py)

@@ -67,24 +67,41 @@ CZAS_TEST_AWARIE=01:00:00         # 16 rdzeni x 1h = 16 core-h ceiling (realnie 
 echo "Dolicz TYLKO nowe algorytmy: $NOWE_ALGORYTMY"
 echo ""
 
+# WAŻNE (dodane 2026-09-15 po realnym incydencie - PIERWSZY przebieg policzył
+# TYLKO 1 z 8 algorytmów): --export=ALL,ZMIENNA="a,b,c" NIE DZIAŁA gdy wartość
+# zmiennej SAMA zawiera przecinki - sbatch parsuje CAŁĄ wartość --export po
+# przecinkach (cudzysłowy są zdejmowane przez shell PRZED tym, jak sbatch
+# zobaczy argument, więc nie chronią przecinków wewnątrz wartości), więc
+# SZYNA_ALGORYTMY dostawało tylko pierwszą nazwę do pierwszego przecinka, a
+# reszta nazw trafiała jako bezsensowne dodatkowe tokeny bez "=" i była po
+# cichu ignorowana. POPRAWKA: ustawiamy zmienną w środowisku BASH-a (export)
+# PRZED wywołaniem sbatch, i używamy WYŁĄCZNIE --export=ALL (bez dopisywania
+# wartości) - ALL przenosi WSZYSTKIE zmienne środowiskowe procesu, w tym tę,
+# bez żadnego dodatkowego parsowania po przecinkach.
+export SZYNA_ALGORYTMY="$NOWE_ALGORYTMY"
+
 echo "1/5 Zlecam pelny_przeglad (tylko nowe algorytmy)..."
-JOB1=$(sbatch --parsable --time=$CZAS_PELNY_PRZEGLAD --export=ALL,SZYNA_ALGORYTMY="$NOWE_ALGORYTMY" slurm/slurm_pelny_przeglad.sh)
+JOB1=$(sbatch --parsable --time=$CZAS_PELNY_PRZEGLAD --export=ALL slurm/slurm_pelny_przeglad.sh)
 echo "    -> job $JOB1"
 
 echo "2/5 Zlecam wrazliwosc_2lok (start po sukcesie $JOB1)..."
-JOB2=$(sbatch --parsable --dependency=afterok:$JOB1 --time=$CZAS_WRAZLIWOSC_2LOK --export=ALL,SZYNA_ALGORYTMY="$NOWE_ALGORYTMY" slurm/slurm_wrazliwosc_2lok.sh)
+JOB2=$(sbatch --parsable --dependency=afterok:$JOB1 --time=$CZAS_WRAZLIWOSC_2LOK --export=ALL slurm/slurm_wrazliwosc_2lok.sh)
 echo "    -> job $JOB2"
 
+# test_wrazliwosc_kroku_sterowania.py czyta INNĄ zmienną (SZYNA_ALGORYTMY_KROK,
+# nie SZYNA_ALGORYTMY) - patrz komentarz w nagłówku tego pliku.
+export SZYNA_ALGORYTMY_KROK="$NOWE_ALGORYTMY"
+
 echo "3/5 Zlecam krok_sterowania (start po sukcesie $JOB2)..."
-JOB3=$(sbatch --parsable --dependency=afterok:$JOB2 --time=$CZAS_KROK_STEROWANIA --export=ALL,SZYNA_ALGORYTMY_KROK="$NOWE_ALGORYTMY" slurm/slurm_krok_sterowania.sh)
+JOB3=$(sbatch --parsable --dependency=afterok:$JOB2 --time=$CZAS_KROK_STEROWANIA --export=ALL slurm/slurm_krok_sterowania.sh)
 echo "    -> job $JOB3"
 
 echo "4/5 Zlecam szum_wielu_czujnikow (start po sukcesie $JOB3)..."
-JOB4=$(sbatch --parsable --dependency=afterok:$JOB3 --time=$CZAS_SZUM_CZUJNIKOW --export=ALL,SZYNA_ALGORYTMY="$NOWE_ALGORYTMY" slurm/slurm_szum_wielu_czujnikow.sh)
+JOB4=$(sbatch --parsable --dependency=afterok:$JOB3 --time=$CZAS_SZUM_CZUJNIKOW --export=ALL slurm/slurm_szum_wielu_czujnikow.sh)
 echo "    -> job $JOB4"
 
 echo "5/5 Zlecam test_awarie (start po sukcesie $JOB4)..."
-JOB5=$(sbatch --parsable --dependency=afterok:$JOB4 --time=$CZAS_TEST_AWARIE --export=ALL,SZYNA_ALGORYTMY="$NOWE_ALGORYTMY" slurm/slurm_test_awarie.sh)
+JOB5=$(sbatch --parsable --dependency=afterok:$JOB4 --time=$CZAS_TEST_AWARIE --export=ALL slurm/slurm_test_awarie.sh)
 echo "    -> job $JOB5"
 
 echo ""
@@ -105,8 +122,9 @@ echo "Wrażliwość transmitancji (8x pełny przegląd) CELOWO NIE jest w tym"
 echo "łańcuchu - to NAJDROŻSZY test (szacunkowo 330-660 core-h TYLKO dla 8"
 echo "nowych algorytmów). Sprawdź budżet PRZED zleceniem:"
 echo "  service-balance --check-cpu"
-echo "Jeśli starczy - zlecaj OSOBNO (nie musi czekać na 5 zadań wyżej):"
-echo "  sbatch --export=ALL,SZYNA_ALGORYTMY=\"$NOWE_ALGORYTMY\" slurm/slurm_wrazliwosc_transmitancji.sh"
+echo "Jeśli starczy - zlecaj OSOBNO (nie musi czekać na 5 zadań wyżej). SZYNA_ALGORYTMY"
+echo "jest już ustawione w tej sesji shella (export wyżej), więc --export=ALL wystarczy:"
+echo "  sbatch --export=ALL slurm/slurm_wrazliwosc_transmitancji.sh"
 echo "Po jej zakończeniu (wszystkie 8 elementów tablicy, sprawdź squeue) zbuduj"
 echo "skonsolidowany Excel (8 scenariuszy w jednym pliku):"
 echo "  python generatory_excel/generuj_excel_wrazliwosc_transmitancji.py"

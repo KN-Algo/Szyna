@@ -25,9 +25,13 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=64
 #SBATCH --mem=500G
-#SBATCH --time=6:00:00
+#SBATCH --time=01:30:00
 #SBATCH -p lem-cpu
 #SBATCH --output=szyna_szum_czujnikow_%j.log
+# --time ZMNIEJSZONE 2026-09-15 (lokalizacje ograniczone do 4 JAWNE, zamiast
+# 10 losowych - patrz SZYNA_LOKALIZACJE_SZUM niżej) - 64 rdzenie x 1.5h = 96
+# CPU-h ceiling, realny koszt szacunkowo ~70 core-h (164 core-h oryginalne x
+# 4/10 lok. x 45/42 alg.).
 
 set -euo pipefail
 
@@ -41,8 +45,11 @@ source "$HOME/szyna_venv/bin/activate"
 pip install --upgrade pip
 pip install -r "$SCRIPT_DIR/requirements.txt"
 
-# Celowo NIE ustawiamy SZYNA_LICZBA_LOKALIZACJI_SZUM/SZYNA_MAX_DNI_SZUM -
-# domyślnie: 10 losowych lokalizacji (seed stały, powtarzalny), okno 10 dni.
+# Celowo NIE ustawiamy SZYNA_MAX_DNI_SZUM - okno 10 dni. SZYNA_LOKALIZACJE_SZUM
+# ustawione na 4 JAWNE lokalizacje (2026-09-15, zamiast 10 losowych - jak w
+# slurm_pelny_przeglad.sh, patrz tam pełne uzasadnienie wyboru) - wyłącza
+# losowanie w test_szum_wielu_czujnikow.py.
+export SZYNA_LOKALIZACJE_SZUM="sodankyla_60min_2025,murmansk_60min_2025,quebec_city_60min_2025,norylsk_60min_2025"
 export SZYNA_FOLDER_WYNIKOW_SZUM="$SCRIPT_DIR/wyniki/szum_wielu_czujnikow"
 
 python testy/test_szum_wielu_czujnikow.py
