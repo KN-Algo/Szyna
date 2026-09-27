@@ -27,7 +27,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=64
 #SBATCH --mem=1000G
-#SBATCH --time=4:00:00
+#SBATCH --time=3:00:00
 #SBATCH -p lem-cpu
 #SBATCH --output=szyna_wrazliwosc_2lok_%j.log
 

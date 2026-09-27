@@ -276,8 +276,24 @@ def apply_delay(u, L):
 
 
 def get_sim(num, den, u):
+    """
+    POPRAWKA (2026-09-25): wcześniej `to_discrete(dt=1, ...)` na stałe, mimo że
+    WSZYSTKIE dane wchodzące tutaj (df_moc/df_pog) są resamplowane do siatki
+    RESAMPLE_S=10s (patrz resampluj()) - to NIE psuło dopasowania (R²/RMSE/AIC
+    są poprawne, bo krzywa dyskretna i tak jest liczona próbka-po-próbce), ale
+    fałszowało JEDNOSTKI wypisywanych stałych czasowych: dopasowane T1/T2/Tz/L
+    wychodziły w "próbkach 10-sekundowych", nie w sekundach - żeby dostać
+    prawdziwe sekundy, trzeba było ręcznie pomnożyć każdą z tych wartości przez
+    RESAMPLE_S=10 (np. tabela PWR: T1=190,12 -> naprawdę 1901,2 s, nie 190,12 s).
+    Zweryfikowane bezpośrednio: ponowne dopasowanie z poprawnym dt=RESAMPLE_S
+    daje IDENTYCZNE R²/adj R²/RMSE i T1_popr = T1_stary * RESAMPLE_S co do
+    ułamka procenta - to była WYŁĄCZNIE pomyłka jednostek, nie błąd dopasowania.
+    Istniejące wyniki_identyfikacji_miso.csv z PRZED tej poprawki mają więc
+    poprawne R²/RMSE/ranking kanałów, ale kolumnę 'parametry' (T1/T2/Tz) i 'L'
+    trzeba czytać pomnożone przez RESAMPLE_S, żeby dostać sekundy.
+    """
     den = [max(abs(d), 1e-10) if i == 0 else d for i, d in enumerate(den)]
-    sys_d = signal.TransferFunction(num, den).to_discrete(dt=1, method='gbt', alpha=0.5)
+    sys_d = signal.TransferFunction(num, den).to_discrete(dt=RESAMPLE_S, method='gbt', alpha=0.5)
     return signal.lfilter(sys_d.num, sys_d.den, u)
 
 

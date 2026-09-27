@@ -101,6 +101,8 @@ NAZWY_ALGORYTMOW = {
     'fuzzy_ryzyko_1': 'Fuzzy + ryzyko (FL1, ciągły)',
     'fuzzy_ryzyko_2': 'Fuzzy + ryzyko (FL2, binarny)',
     'fuzzy_ryzyko_2v2': 'Fuzzy + ryzyko (FL2v2, binarny)',
+    'fuzzy_ryzyko_2v2_crt_progi': 'Fuzzy + ryzyko (FL2v2, progi na CRT)',
+    'fuzzy_ryzyko_2v2_crt_pelny': 'Fuzzy + ryzyko (FL2v2, w całości na CRT)',
     'fuzzy_ryzyko_3': 'Fuzzy + ryzyko (FL3, PWM)',
     'fuzzy_normy_1': 'Fuzzy + norma (FL1, ciągły)',
     'fuzzy_normy_2': 'Fuzzy + norma (FL2, binarny)',
@@ -111,6 +113,8 @@ NAZWY_ALGORYTMOW = {
     'fuzzy_ryzyko_1_opad': 'Fuzzy + ryzyko + opad (FL1, ciągły)',
     'fuzzy_ryzyko_2_opad': 'Fuzzy + ryzyko + opad (FL2, binarny)',
     'fuzzy_ryzyko_2v2_opad': 'Fuzzy + ryzyko + opad (FL2v2, binarny)',
+    'fuzzy_ryzyko_2v2_opad_crt_progi': 'Fuzzy + ryzyko + opad (FL2v2, progi na CRT)',
+    'fuzzy_ryzyko_2v2_opad_crt_pelny': 'Fuzzy + ryzyko + opad (FL2v2, w całości na CRT)',
     'fuzzy_ryzyko_3_opad': 'Fuzzy + ryzyko + opad (FL3, PWM)',
     'nauka_kary': 'Uczenie z kar (bazowy)',
     'nauka_kary_temp': 'Uczenie z kar + prognoza temp.',
@@ -696,7 +700,16 @@ def main():
     # pokazuje ZMIANY w czasie). Pomijana bez błędu, jeśli żadne takie pliki
     # nie istnieją (np. przegląd nie obejmował algorytmów nauka_kary_*).
     # ==========================================================================
-    _wszystkie_pliki_uczenia = sorted(glob.glob(os.path.join(FOLDER_CSV_SZCZEGOLOWE, '*_uczenie.csv')))
+    # Tylko pliki lokalizacji obecnych w BIEŻĄCYM PRZEGLAD_ZBIORCZY.csv: folder
+    # FOLDER_CSV_SZCZEGOLOWE (np. PD na klastrze) przeżywa kolejne przebiegi, więc
+    # po zawężeniu lokalizacji (np. 44 -> 4) leżą w nim jeszcze *_uczenie.csv ze
+    # starych przebiegów (inne lokalizacje, ewentualnie starsza wersja kodu) i bez
+    # tego filtra trafiałyby do zakładek Uczenie_adaptacyjne/Strojenie_progow_ryzyka.
+    _lokalizacje_biezace = tuple(f'{lok}_' for lok in df['lokalizacja'].unique())
+    _wszystkie_pliki_uczenia = sorted(
+        p for p in glob.glob(os.path.join(FOLDER_CSV_SZCZEGOLOWE, '*_uczenie.csv'))
+        if os.path.basename(p).startswith(_lokalizacje_biezace)
+    )
     # Tylko rodzina nauka_kary_* (schemat: czynnik_nauczony + 3 liczniki kar) - patrz
     # osobny blok niżej dla risk_function_pid_auto (schemat: koszt + strojone progi,
     # NIEKOMPATYBILNY z kolumnami poniżej - własna zakładka "Strojenie_progow_ryzyka").

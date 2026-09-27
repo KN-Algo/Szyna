@@ -25,6 +25,9 @@
 # realne zużycie na zadanie jest wielokrotnie niższe, ale 1200G i tak zostaje -
 # to tani, praktycznie darmowy zapas bezpieczeństwa (node ma 1430G limitu).
 #
+# AKTUALNIE (2026-09-20): --time=04:30:00 = 288 CPU-h ceiling, patrz "UWAGA
+# budżetu konta" niżej; poniższy akapit to HISTORIA wcześniejszego ustawienia 12h.
+#
 # --cpus-per-task=64 / --time=12:00:00 (12h) = 768 CPU-h ceiling (podniesione z
 # 48 rdzeni na życzenie użytkownika 2026-09-07 - "niech będzie 64 rdzenie brane
 # do wyliczeń, niech się szybciej liczą" - WIĘCEJ równoległych procesów na to
@@ -65,15 +68,20 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=64
 #SBATCH --mem=1000G
-#SBATCH --time=01:00:00
+#SBATCH --time=04:30:00
 #SBATCH -p lem-cpu
 #SBATCH --output=szyna_pelny_%j.log
-# UWAGA budżetu konta: 64 rdzenie x 1h = 64 CPU-h ceiling. ZMNIEJSZONE
-# 2026-09-15 na życzenie użytkownika - lokalizacje ograniczone do 4 najbardziej
-# ekstremalnych (patrz SZYNA_LOKALIZACJE niżej), więc realny koszt spadł z
-# ~192-384 core-h (44 lok. x 37 alg.) do szacunkowo ~21-43 core-h (4 lok. x 45
-# alg., proporcja 4/44 x 45/37) - --time z dużym zapasem (~1.5-3x), nie na styk.
-# Sprawdź dostępne CPU-h PRZED zleceniem (service-balance --check-cpu).
+# UWAGA budżetu konta: 64 rdzenie x 4.5h = 288 CPU-h ceiling. PRZYWRÓCONE
+# 2026-09-20 na życzenie użytkownika: ten skrypt jest teraz JEDYNYM testem
+# odpalanym na klastrze - WSZYSTKIE 44 lokalizacje x WSZYSTKIE 45 algorytmów,
+# pełny sezon (1980 zadań). Szacunek kosztu ~230-260 core-h (pomiar: ~7.7 min
+# rdzenia na zadanie średnio; norma ~70 s, fuzzy ~180 s, PID ~490 s), czyli
+# ceiling 288 mieści się w saldzie ~300 CPU-h, ale bez dużego zapasu -
+# sprawdź `service-balance --check-cpu` PRZED zleceniem i, jeśli saldo jest
+# mniejsze niż 288, zmniejsz --time (ceiling = 64 x godziny). Gdyby zadanie
+# wyczerpało limit czasu, CSV zbiorczy jest zapisywany po KAŻDYM zadaniu -
+# ponowne `sbatch` dokończy tylko brakujące pary (SZYNA_WZNOW=1).
+# Inne testy (wrażliwość, krok, szum, awarie) liczone są lokalnie.
 
 set -euo pipefail
 
@@ -106,15 +114,11 @@ pip install -r "$SCRIPT_DIR/requirements.txt"
 # wszystkie algorytmy. SZYNA_LICZBA_WATKOW też nie jest konieczne -
 # autodetekcja złapie SLURM_CPUS_PER_TASK ustawione przez --cpus-per-task wyżej.
 #
-# SZYNA_LOKALIZACJE ograniczone do 4 lokalizacji (2026-09-15, na życzenie
-# użytkownika - "zmniejsz lokalizacje, daj tylko 4 w których jest najzimniej
-# oraz jest najwięcej śniegu"): wybrane z pełnej listy 43 lokalizacji przez
-# POŁĄCZONY ranking (ranga wg min. temperatury powietrza + ranga wg sumy opadu
-# przy temp. <=1°C, zsumowane, najniższa suma wygrywa) - patrz obliczenie w
-# historii sesji. Sodankylä i Norylsk trafiają też do TOP8 najzimniejszych
-# osobno, Murmansk i Quebec City do TOP8 najbardziej śnieżnych osobno - te 4 to
-# najlepszy kompromis "zimno + śnieg naraz", nie tylko jedno z dwóch kryteriów.
-export SZYNA_LOKALIZACJE="sodankyla_60min_2025,murmansk_60min_2025,quebec_city_60min_2025,norylsk_60min_2025"
+# SZYNA_LOKALIZACJE CELOWO NIE USTAWIONE (2026-09-20, na życzenie użytkownika) -
+# brak filtra = WSZYSTKIE pliki z Pogoda_pomiary_15_minut/ (44 lokalizacje).
+# UWAGA: jeśli SZYNA_LOKALIZACJE jest ustawione w środowisku Twojej sesji
+# (np. z wcześniejszego `export`), zostanie użyte - stąd `unset` poniżej.
+unset SZYNA_LOKALIZACJE
 export SZYNA_FOLDER_WYNIKOW="$SCRIPT_DIR/wyniki/przeglad_wielu_lokalizacji"
 
 # Ciężkie pliki (pełna trajektoria per (lokalizacja, algorytm) - ~44x37=1628

@@ -100,6 +100,19 @@
 #                    notatki/algorytmy/*.md i AGENTS.md po uzasadnienie.
 #   'pamiec_przyblizona_mb'  - przybliżony rozmiar stanu w stanie USTALONYM w MB
 #                    (zaktualizowane po zmianie na bufor kroczący).
+#
+# algorytm_z_zmienionym_na_crt/ (2026-09-25, na życzenie użytkownika) -
+# podfolder z 4 WARIANTAMI fuzzy_ryzyko_2v2/fuzzy_ryzyko_2v2_opad, w których
+# wyznacznikiem decyzji jest CRT (szyna NIEogrzewana, "zimna") zamiast HRT -
+# do badania wpływu szyny zimnej, patrz Identyfikacja/notatki_identyfikacja/
+# (model transmitancji AT->CRT). Oryginalne pliki fuzzy_ryzyko_2v2* NIETKNIĘTE.
+# Dodajemy ten podfolder do sys.path, żeby __import__ poniżej (flat, bez
+# kropek) znajdował te moduły dokładnie tak samo jak resztę Algorytmy/.
+import os as _os
+import sys as _sys
+_PODFOLDER_CRT = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), 'algorytm_z_zmienionym_na_crt')
+if _PODFOLDER_CRT not in _sys.path:
+    _sys.path.insert(0, _PODFOLDER_CRT)
 
 ALGORYTMY = {
     'compute_control': {
@@ -301,6 +314,38 @@ ALGORYTMY = {
         'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu',
         'pamiec_przyblizona_mb': 21.0,
     },
+    'fuzzy_ryzyko_2v2_crt_progi': {
+        'modul': 'funkcja_fuzzy_ryzyko_2v2_crt_progi',
+        'klasa': 'KontrolerFuzzyRyzyko2v2CrtProgi',
+        'metoda': 'fuzzy_ryzyko_crt_progi',
+        'opis': 'Jak fuzzy_ryzyko_2v2, ale 4 twarde progi (przed silnikiem rozmytym) czytają CRT (szyna '
+                'zimna) zamiast HRT - błąd regulacji zostaje względem HRT - '
+                'algorytm_z_zmienionym_na_crt/funkcja_fuzzy_ryzyko_2v2_crt_progi.py.',
+        'bezpiecznik': True,
+        'typ': 'Fuzzy logic (FL2v2, binarny, 7 reguł, progi na CRT)',
+        'cel': 'Funkcja ryzyka (Kalman)',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) amortyzowane, skok co 300 kroków (Kalman + cyfrowy bliźniak 7200 kroków)',
+        'flops_na_krok': 499,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu',
+        'pamiec_przyblizona_mb': 21.0,
+    },
+    'fuzzy_ryzyko_2v2_crt_pelny': {
+        'modul': 'funkcja_fuzzy_ryzyko_2v2_crt_pelny',
+        'klasa': 'KontrolerFuzzyRyzyko2v2CrtPelny',
+        'metoda': 'fuzzy_ryzyko_crt_pelny',
+        'opis': 'Jak fuzzy_ryzyko_2v2, ale CAŁA decyzja (4 progi + błąd regulacji zasilający silnik '
+                'rozmyty) liczona względem CRT (szyna zimna) - jedyny wyznacznik - '
+                'algorytm_z_zmienionym_na_crt/funkcja_fuzzy_ryzyko_2v2_crt_pelny.py.',
+        'bezpiecznik': True,
+        'typ': 'Fuzzy logic (FL2v2, binarny, 7 reguł, w całości na CRT)',
+        'cel': 'Funkcja ryzyka (Kalman)',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) amortyzowane, skok co 300 kroków (Kalman + cyfrowy bliźniak 7200 kroków)',
+        'flops_na_krok': 499,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu',
+        'pamiec_przyblizona_mb': 21.0,
+    },
     'fuzzy_ryzyko_3': {
         'modul': 'funkcja_fuzzy_ryzyko_3',
         'klasa': 'KontrolerFuzzyRyzyko3',
@@ -440,6 +485,37 @@ ALGORYTMY = {
         'adaptacyjny': True,
         'zlozonosc_czasowa': 'O(1) amortyzowane, skok co 300 kroków (Kalman + cyfrowy bliźniak) + rzadkie wywołania prognozy opadu',
         'flops_na_krok': 513,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu',
+        'pamiec_przyblizona_mb': 21.0,
+    },
+    'fuzzy_ryzyko_2v2_opad_crt_progi': {
+        'modul': 'funkcja_fuzzy_ryzyko_2v2_opad_crt_progi',
+        'klasa': 'KontrolerFuzzyRyzyko2v2OpadCrtProgi',
+        'metoda': 'fuzzy_ryzyko_opad_crt_progi',
+        'opis': 'Jak fuzzy_ryzyko_2v2_opad, ale 4 twarde progi czytają CRT (szyna zimna) zamiast HRT - '
+                'błąd regulacji zostaje względem HRT - '
+                'algorytm_z_zmienionym_na_crt/funkcja_fuzzy_ryzyko_2v2_opad_crt_progi.py.',
+        'bezpiecznik': True,
+        'typ': 'Fuzzy logic (FL2v2, binarny, 7 reguł, progi na CRT)',
+        'cel': 'Funkcja ryzyka (Kalman) + prognoza opadu',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) amortyzowane, skok co 300 kroków (Kalman + cyfrowy bliźniak) + rzadkie wywołania prognozy opadu',
+        'flops_na_krok': 514,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu',
+        'pamiec_przyblizona_mb': 21.0,
+    },
+    'fuzzy_ryzyko_2v2_opad_crt_pelny': {
+        'modul': 'funkcja_fuzzy_ryzyko_2v2_opad_crt_pelny',
+        'klasa': 'KontrolerFuzzyRyzyko2v2OpadCrtPelny',
+        'metoda': 'fuzzy_ryzyko_opad_crt_pelny',
+        'opis': 'Jak fuzzy_ryzyko_2v2_opad, ale CAŁA decyzja liczona względem CRT (szyna zimna) - jedyny '
+                'wyznacznik - algorytm_z_zmienionym_na_crt/funkcja_fuzzy_ryzyko_2v2_opad_crt_pelny.py.',
+        'bezpiecznik': True,
+        'typ': 'Fuzzy logic (FL2v2, binarny, 7 reguł, w całości na CRT)',
+        'cel': 'Funkcja ryzyka (Kalman) + prognoza opadu',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) amortyzowane, skok co 300 kroków (Kalman + cyfrowy bliźniak) + rzadkie wywołania prognozy opadu',
+        'flops_na_krok': 514,
         'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu',
         'pamiec_przyblizona_mb': 21.0,
     },

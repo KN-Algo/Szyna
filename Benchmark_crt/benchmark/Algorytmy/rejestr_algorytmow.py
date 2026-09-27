@@ -1,0 +1,931 @@
+# Algorytmy/rejestr_algorytmow.py
+#
+# Mapa: nazwa algorytmu -> (moduł, klasa, metoda decyzyjna). Używana przez wszystkie
+# trzy skrypty testujące:
+#   - test_jeden_algorytm_jedna_lokalizacja.py       (JEDEN algorytm, JEDNA lokalizacja + GUI)
+#   - test_wszystkie_algorytmy_jedna_lokalizacja.py  (WSZYSTKIE algorytmy, JEDNA lokalizacja)
+#   - test_wszystkie_algorytmy_wszystkie_lokalizacje.py (WSZYSTKIE algorytmy, WSZYSTKIE lokalizacje)
+# dzięki temu wszystkie trzy zawsze widzą ten sam, spójny zestaw dostępnych
+# algorytmów i nie trzeba nigdzie duplikować ścieżek importu.
+#
+# Metoda decyzyjna może zwracać:
+#   - samą moc [%] (float)                    - jak compute_control, algorytm_z_normy, fuzzy_logic_*
+#   - krotkę (moc [%], diagnostyka: dict)      - jak risk_function*, fuzzy_ryzyko_*, norma_pid, fuzzy_normy_*
+#
+# Każdy algorytm ma własny plik (łatwiejsza nawigacja). Wspólna infrastruktura:
+#   - rdzen_kontrolera.py         - pamięć czujników + prognoza Kalmana + autotest
+#   - funkcja_ryzyka_wspolne.py   - setpoint funkcji ryzyka (Kalman + kara za śnieg),
+#                                   współdzielony przez risk_function/risk_function_pid
+#                                   i fuzzy_ryzyko_* (KontrolerRyzykaBazowy), oraz
+#                                   wariant z prognozą OPADU (przewidywanie_opadow.py,
+#                                   KontrolerRyzykaOpadBazowy), współdzielony przez
+#                                   *_opad
+#   - funkcja_normy_wspolne.py    - setpoint z progów normy LET-1 (bez pamięci/prognozy),
+#                                   współdzielony przez norma_pid i fuzzy_normy_*
+#   - silniki_fuzzy.py            - rdzenie wnioskowania rozmytego (FL1/FL2/FL2v2/FL3),
+#                                   współdzielone przez fuzzy_logic_*, fuzzy_ryzyko_*,
+#                                   fuzzy_normy_*
+#   - przewidywanie_opadow.py     - prognoza intensywności opadu (0-3, horyzont 2h,
+#                                   model wilgotności względnej/mokrego termometru na
+#                                   prognozie AT z Kalmana), używana przez *_opad, żeby
+#                                   NIE grzać na zapas, gdy front opadowy kończy się, a
+#                                   pokrywa jest cienka - ufamy bezwładności cieplnej.
+# Żaden z tych plików nie jest samodzielnym algorytmem i nie ma tu wpisu.
+#
+# 'bezpiecznik': True oznacza, że w porównaniach (test_wszystkie_algorytmy_*)
+# algorytm dostaje grubość śniegu/moc algorytm_z_normy jako referencję i NIE
+# WOLNO mu przekroczyć jej w żadnej chwili (patrz symulacja_fizyczna.uruchom_kontroler,
+# parametr snow_reference_mm). Wyłączone tylko dla algorytm_z_normy (sam jest
+# wyznacznikiem) i compute_control (od początku projektu traktowany jako
+# osobny, wcześniej istniejący algorytm referencyjny) - wszystkie pozostałe,
+# "inteligentne" algorytmy (funkcja ryzyka, fuzzy logic, PID/fuzzy z normą)
+# podlegają bezpiecznikowi.
+#
+# Pola opisowe (do zakładki opisowej w Podsumowanie_wynikow.xlsx - patrz
+# generuj_excel_podsumowanie.py):
+#   'typ'          - rodzaj regulatora wykonawczego (Histereza / PID / Fuzzy logic ...).
+#   'cel'          - na czym oparty jest setpoint (temperatura zadana): Progi normy LET-1
+#                    (statyczne progi, bez pamięci/prognozy), Funkcja ryzyka (pamięć +
+#                    prognoza Kalmana + kara za zalegający śnieg), Funkcja ryzyka + prognoza
+#                    opadu (jw. plus przewidywanie_opadow.py), albo Stały cel (fuzzy_logic_*
+#                    - brak zewnętrznej strategii, cel wpisany na sztywno w silnik rozmyty).
+#   'adaptacyjny'  - czy kontroler ma JEDNORAZOWY autotest startowy (skok grzania
+#                    0%->100%, identyfikacja SOPDT) i przestraja się/buduje cyfrowy
+#                    bliźniak na jego podstawie (patrz rdzen_kontrolera.autotest) - True
+#                    tylko dla risk_function_pid(*) i fuzzy_ryzyko_*(*) (w tym warianty
+#                    _opad). Pozostałe albo nie mają autotestu wcale, albo (norma_pid)
+#                    używają nastaw SIMC wyliczonych offline raz, nie na żywo.
+#
+# Pola złożoności obliczeniowej (do zakładki "Zlozonosc_obliczeniowa" w Excelu) -
+# SZACUNKOWE, wyliczone analizą kodu (liczenie operacji w każdej ścieżce), NIE
+# zmierzone profilerem - traktuj jako rząd wielkości, nie dokładną liczbę cykli:
+#   'zlozonosc_czasowa'      - notacja O() na krok symulacji (1 wywołanie metody
+#                    decyzyjnej = 1 symulowana sekunda). Kontrolery dziedziczące
+#                    KontrolerBazowy aktualizują bufor kroczącej średniej
+#                    15-minutowej co krok (O(1) - patrz
+#                    rdzen_kontrolera.KontrolerBazowy._append_sensor_history,
+#                    zmienione 2026-09-02 z surowej historii na bufor stałego
+#                    rozmiaru), a te z prognozą Kalmana (_forecast_attribute)
+#                    mają dodatkowo skok co TEMP_FORECAST_REFRESH_S=300 kroków,
+#                    gdy przelicza się prognozę - ale TERAZ na co najwyżej
+#                    MAX_ROLLING_HISTORY=36 uśrednionych binach (nie na całej
+#                    zebranej historii jak poprzednio) - a te z cyfrowym
+#                    bliźniakiem (_prognoza_zanikania_ciepla) dodatkowy skok co
+#                    300 kroków o rozmiarze HORIZON_STEPS*STEP_SECONDS=7200
+#                    kroków symulacji modelu w przód. Autotest startowy
+#                    (adaptacyjne) to JEDNORAZOWY koszt O(czas trwania
+#                    autotestu, do 14400 kroków) - nie wliczony do poniższych
+#                    FLOPs/krok (te opisują stan USTALONY, PO autotescie).
+#   'flops_na_krok'          - przybliżona ŚREDNIA liczba operacji zmiennoprzecinkowych
+#                    NA KROK (uwzględniająca amortyzację powyższych skoków) -
+#                    wyłącznie logika DECYZYJNA algorytmu, bez współdzielonej
+#                    fizyki obiektu/śniegu (identycznej dla wszystkich
+#                    algorytmów, więc nieróżnicującej). Rzędu dziesiątek-setek
+#                    FLOPs/krok dla każdego algorytmu - realny czas symulacji
+#                    (minuty/godziny) wynika z narzutu interpretera
+#                    Pythona/pandas na krok, NIE z limitu przepustowości FLOPs
+#                    procesora (to zadanie jest memory/interpreter-bound, nie
+#                    compute-bound). UWAGA: wartości poniżej NIE zostały jeszcze
+#                    przeliczone po zmianie z surowej historii na bufor
+#                    kroczący (2026-09-02) - realny koszt spadł (mniej pracy w
+#                    _forecast_attribute), ale stare szacunki wciąż są bezpieczną
+#                    (zawyżoną) górną granicą; ufaj kolumnie "FLOPs (zmierzone)"
+#                    w Excelu, nie tym stałym.
+#   'zlozonosc_pamieciowa'   - notacja O() pamięci stanu instancji kontrolera
+#                    względem liczby dotychczasowych kroków symulacji. Od
+#                    2026-09-02: kontrolery dziedziczące KontrolerBazowy mają
+#                    O(1) (STAŁY bufor kroczący MAX_ROLLING_HISTORY=36 binów,
+#                    NIE rosnący z długością symulacji) - poprzednio
+#                    O(min(krok, 86400)) surowej historii odczytów. Patrz
+#                    notatki/algorytmy/*.md i AGENTS.md po uzasadnienie.
+#   'pamiec_przyblizona_mb'  - przybliżony rozmiar stanu w stanie USTALONYM w MB
+#                    (zaktualizowane po zmianie na bufor kroczący).
+#
+# fuzzy_ryzyko_2v2_crt_progi / _pelny / _opad_crt_progi / _opad_crt_pelny -
+# (ten folder Benchmark_crt/ w całości: CRT, szyna NIEogrzewana, jest
+# wyznacznikiem decyzji zamiast HRT - patrz symulacja_fizyczna.py, gdzie
+# transmitancje AT->CRT i moc->ΔHRT są zidentyfikowane z realnych danych
+# Wrocław Popowice) - 4 warianty fuzzy_ryzyko_2v2/fuzzy_ryzyko_2v2_opad, pliki
+# leżą wprost w tym folderze (Algorytmy/), jak każdy inny algorytm.
+
+ALGORYTMY = {
+    'compute_control': {
+        'modul': 'histereza_let1',
+        'klasa': 'KontrolerHisterezaLET1',
+        'metoda': 'compute_control',
+        'opis': 'Obecny algorytm sterownika (LET-1, histereza CRT/HRT) - histereza_let1.py.',
+        'bezpiecznik': False,
+        'typ': 'Histereza',
+        'cel': 'Progi normy LET-1',
+        'adaptacyjny': False,
+        'zlozonosc_czasowa': 'O(1) na krok (amortyzowane)',
+        'flops_na_krok': 45,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) - pamięć czujników',
+        'pamiec_przyblizona_mb': 18.0,
+    },
+    'compute_control_gorski': {
+        'modul': 'histereza_let1_gorski',
+        'klasa': 'KontrolerHisterezaLET1Gorski',
+        'metoda': 'compute_control',
+        'opis': 'Wariant compute_control dla rejonów górskich (LET-1 pkt 2.4.18.7) - próg wyłączenia HRT '
+                'przy opadach podniesiony z +7°C do +10°C (bardzo intensywne opady śniegu) - histereza_let1_gorski.py.',
+        'bezpiecznik': False,
+        'typ': 'Histereza',
+        'cel': 'Progi normy LET-1 (rejon górski, pkt 2.4.18.7)',
+        'adaptacyjny': False,
+        'zlozonosc_czasowa': 'O(1) na krok (amortyzowane)',
+        'flops_na_krok': 45,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) - pamięć czujników',
+        'pamiec_przyblizona_mb': 18.0,
+    },
+    'algorytm_z_normy': {
+        'modul': 'algorytm_z_normy',
+        'klasa': 'AutomatPogodowyNorma',
+        'metoda': 'compute_control',
+        'opis': 'Czysty automat pogodowy wg instrukcji Iet-1 (referencja/wyznacznik dopuszczalnej ilości śniegu).',
+        'bezpiecznik': False,
+        'typ': 'Automat pogodowy (histereza)',
+        'cel': 'Progi normy LET-1',
+        'adaptacyjny': False,
+        'zlozonosc_czasowa': 'O(1) na krok',
+        'flops_na_krok': 18,
+        'zlozonosc_pamieciowa': 'O(1) - brak pamięci/historii',
+        'pamiec_przyblizona_mb': 0.001,
+    },
+    'risk_function': {
+        'modul': 'funkcja_ryzyka_binarna',
+        'klasa': 'KontrolerRyzykaBinarny',
+        'metoda': 'risk_function',
+        'opis': 'Funkcja ryzyka z pamięcią i prognozą Kalmana - wyjście binarne (0/100%) - funkcja_ryzyka_binarna.py.',
+        'bezpiecznik': True,
+        'typ': 'Histereza',
+        'cel': 'Funkcja ryzyka (Kalman)',
+        'adaptacyjny': False,
+        'zlozonosc_czasowa': 'O(1) amortyzowane, skok co 300 kroków (prognoza Kalmana)',
+        'flops_na_krok': 145,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200))',
+        'pamiec_przyblizona_mb': 18.0,
+    },
+    'risk_function_pid': {
+        'modul': 'funkcja_ryzyka_pid',
+        'klasa': 'KontrolerRyzykaPID',
+        'metoda': 'risk_function_pid',
+        'opis': 'Jak risk_function, ale z ciągłym regulatorem PI (0-100%) dostrojonym metodą SIMC - funkcja_ryzyka_pid.py.',
+        'bezpiecznik': True,
+        'typ': 'PID (PI, SIMC)',
+        'cel': 'Funkcja ryzyka (Kalman)',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) amortyzowane, skok co 300 kroków (Kalman + cyfrowy bliźniak 7200 kroków)',
+        'flops_na_krok': 450,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu',
+        'pamiec_przyblizona_mb': 21.0,
+    },
+    'risk_function_pid_auto': {
+        'modul': 'funkcja_ryzyka_pid_auto_strojenie',
+        'klasa': 'KontrolerRyzykaPIDAutoStrojenie',
+        'metoda': 'risk_function_pid_auto',
+        'opis': 'Jak risk_function_pid, plus AUTOMATYCZNE strojenie progów setpointu (hrt_on_precip, '
+                'at_low_freeze, hrt_on_dry, kara za śnieg) metodą "perturb-and-observe" co 7 dni - patrz '
+                'notatki/propozycja_auto_strojenie.md i funkcja_ryzyka_pid_auto_strojenie.py.',
+        'bezpiecznik': True,
+        'typ': 'PID (PI, SIMC, auto-strojenie progów)',
+        'cel': 'Funkcja ryzyka (Kalman) + progi strojone automatycznie',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) amortyzowane, jak risk_function_pid + skok co OKRES_STROJENIA_S=7 dni (tani, kilka porównań/przypisań)',
+        'flops_na_krok': 460,
+        'zlozonosc_pamieciowa': 'O(1) (bufor kroczący) + bufory autotestu/modelu + log strojenia (rośnie ~1 wpis/7 dni)',
+        'pamiec_przyblizona_mb': 3.0,
+    },
+    'risk_function_cascade_pi': {
+        'modul': 'funkcja_ryzyka_pid_kaskada',
+        'klasa': 'KontrolerRyzykaPIDKaskada',
+        'metoda': 'risk_function_cascade_pi',
+        'opis': 'Jak risk_function_pid, ale KASKADA dwóch regulatorów PI zamiast jednego: pętla zewnętrzna '
+                '(wolna) liczy błąd względem CRT i wyznacza hrt_setpoint, pętla wewnętrzna (szybka) liczy błąd '
+                'hrt_setpoint-HRT i steruje mocą - naprawia udokumentowaną wadę risk_function_pid (bezpośrednie '
+                'sprzężenie na CRT, który reaguje na grzanie bardzo słabo/wolno - patrz K_H_CRT_KONTROLER w '
+                'rdzen_kontrolera.py). Dodane 2026-09-28 na życzenie użytkownika - funkcja_ryzyka_pid_kaskada.py.',
+        'bezpiecznik': True,
+        'typ': 'PID kaskadowy (2x PI, SIMC)',
+        'cel': 'Funkcja ryzyka (Kalman) - kaskada CRT (zewn.) -> HRT (wewn.)',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) amortyzowane, skok co 300 kroków (Kalman + cyfrowy bliźniak 7200 kroków)',
+        'flops_na_krok': 460,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu',
+        'pamiec_przyblizona_mb': 21.0,
+    },
+    'risk_function_cascade_pi_opad': {
+        'modul': 'funkcja_ryzyka_pid_kaskada_opad',
+        'klasa': 'KontrolerRyzykaPIDKaskadaOpad',
+        'metoda': 'risk_function_cascade_pi_opad',
+        'opis': 'Jak risk_function_cascade_pi, plus prognoza opadu (przewidywanie_opadow.py) - nie grzeje na '
+                'zapas, gdy front kończy się a pokrywa jest cienka - funkcja_ryzyka_pid_kaskada_opad.py.',
+        'bezpiecznik': True,
+        'typ': 'PID kaskadowy (2x PI, SIMC)',
+        'cel': 'Funkcja ryzyka (Kalman) + prognoza opadu - kaskada CRT (zewn.) -> HRT (wewn.)',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) amortyzowane, skok co 300 kroków (Kalman + cyfrowy bliźniak) + rzadkie wywołania prognozy opadu',
+        'flops_na_krok': 470,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu',
+        'pamiec_przyblizona_mb': 21.0,
+    },
+    'norma_pid': {
+        'modul': 'funkcja_pid_normy',
+        'klasa': 'KontrolerNormaPID',
+        'metoda': 'norma_pid',
+        'opis': 'Ciągły regulator PI dążący do progów normy LET-1 (bez pamięci/prognozy) - funkcja_pid_normy.py.',
+        'bezpiecznik': True,
+        'typ': 'PID (PI, SIMC offline)',
+        'cel': 'Progi normy LET-1',
+        'adaptacyjny': False,
+        'zlozonosc_czasowa': 'O(1) na krok',
+        'flops_na_krok': 18,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) - dziedziczona pamięć czujników (niewykorzystywana)',
+        'pamiec_przyblizona_mb': 18.0,
+    },
+    'fuzzy_logic_1': {
+        'modul': 'fuzzy_logic_1',
+        'klasa': 'KontrolerFuzzy1',
+        'metoda': 'compute_control',
+        'opis': 'Regulator rozmyty (Sugeno) wokół stałego celu 3°C, wyjście ciągłe z miękkim obcięciem krańców - fuzzy_logic_1.py.',
+        'bezpiecznik': True,
+        'typ': 'Fuzzy logic (FL1, ciągły)',
+        'cel': 'Stały cel (3°C)',
+        'adaptacyjny': False,
+        'zlozonosc_czasowa': 'O(1) na krok',
+        'flops_na_krok': 40,
+        'zlozonosc_pamieciowa': 'O(1) - brak pamięci',
+        'pamiec_przyblizona_mb': 0.001,
+    },
+    'fuzzy_logic_2': {
+        'modul': 'fuzzy_logic_2',
+        'klasa': 'KontrolerFuzzy2',
+        'metoda': 'compute_control',
+        'opis': 'Jak fuzzy_logic_1, ale wyjście twardo zbinaryzowane (próg 50%) - fuzzy_logic_2.py.',
+        'bezpiecznik': True,
+        'typ': 'Fuzzy logic (FL2, binarny)',
+        'cel': 'Stały cel (3°C)',
+        'adaptacyjny': False,
+        'zlozonosc_czasowa': 'O(1) na krok',
+        'flops_na_krok': 40,
+        'zlozonosc_pamieciowa': 'O(1) - brak pamięci',
+        'pamiec_przyblizona_mb': 0.001,
+    },
+    'fuzzy_logic_2v2': {
+        'modul': 'fuzzy_logic_2v2',
+        'klasa': 'KontrolerFuzzy2v2',
+        'metoda': 'compute_control',
+        'opis': 'Wariant fuzzy_logic_2 z dodatkową regułą i progiem "lodowato" zależnym od opadu - fuzzy_logic_2v2.py.',
+        'bezpiecznik': True,
+        'typ': 'Fuzzy logic (FL2v2, binarny, 7 reguł)',
+        'cel': 'Stały cel (3°C)',
+        'adaptacyjny': False,
+        'zlozonosc_czasowa': 'O(1) na krok',
+        'flops_na_krok': 48,
+        'zlozonosc_pamieciowa': 'O(1) - brak pamięci',
+        'pamiec_przyblizona_mb': 0.001,
+    },
+    'fuzzy_logic_3': {
+        'modul': 'fuzzy_logic_3',
+        'klasa': 'KontrolerFuzzy3',
+        'metoda': 'compute_control',
+        'opis': 'Jak fuzzy_logic_1, ale wyjście modulowane PWM (okno 60s) zamiast ciągłe - fuzzy_logic_3.py.',
+        'bezpiecznik': True,
+        'typ': 'Fuzzy logic (FL3, PWM)',
+        'cel': 'Stały cel (3°C)',
+        'adaptacyjny': False,
+        'zlozonosc_czasowa': 'O(1) na krok',
+        'flops_na_krok': 42,
+        'zlozonosc_pamieciowa': 'O(1) - stan PWM (2 liczby)',
+        'pamiec_przyblizona_mb': 0.001,
+    },
+    'fuzzy_ryzyko_1': {
+        'modul': 'funkcja_fuzzy_ryzyko_1',
+        'klasa': 'KontrolerFuzzyRyzyko1',
+        'metoda': 'fuzzy_ryzyko',
+        'opis': 'Cel z funkcji ryzyka (Kalman + kara za śnieg), wykonawczo silnik FL1 (ciągłe) - funkcja_fuzzy_ryzyko_1.py.',
+        'bezpiecznik': True,
+        'typ': 'Fuzzy logic (FL1, ciągły)',
+        'cel': 'Funkcja ryzyka (Kalman)',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) amortyzowane, skok co 300 kroków (Kalman + cyfrowy bliźniak 7200 kroków)',
+        'flops_na_krok': 490,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu',
+        'pamiec_przyblizona_mb': 21.0,
+    },
+    'fuzzy_ryzyko_2': {
+        'modul': 'funkcja_fuzzy_ryzyko_2',
+        'klasa': 'KontrolerFuzzyRyzyko2',
+        'metoda': 'fuzzy_ryzyko',
+        'opis': 'Cel z funkcji ryzyka, wykonawczo silnik FL2 (binarne) - funkcja_fuzzy_ryzyko_2.py.',
+        'bezpiecznik': True,
+        'typ': 'Fuzzy logic (FL2, binarny)',
+        'cel': 'Funkcja ryzyka (Kalman)',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) amortyzowane, skok co 300 kroków (Kalman + cyfrowy bliźniak 7200 kroków)',
+        'flops_na_krok': 490,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu',
+        'pamiec_przyblizona_mb': 21.0,
+    },
+    'fuzzy_ryzyko_2v2': {
+        'modul': 'funkcja_fuzzy_ryzyko_2v2',
+        'klasa': 'KontrolerFuzzyRyzyko2v2',
+        'metoda': 'fuzzy_ryzyko',
+        'opis': 'Cel z funkcji ryzyka, wykonawczo silnik FL2v2 (binarne, 7 reguł) - funkcja_fuzzy_ryzyko_2v2.py.',
+        'bezpiecznik': True,
+        'typ': 'Fuzzy logic (FL2v2, binarny, 7 reguł)',
+        'cel': 'Funkcja ryzyka (Kalman)',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) amortyzowane, skok co 300 kroków (Kalman + cyfrowy bliźniak 7200 kroków)',
+        'flops_na_krok': 498,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu',
+        'pamiec_przyblizona_mb': 21.0,
+    },
+    'fuzzy_ryzyko_2v2_crt_progi': {
+        'modul': 'funkcja_fuzzy_ryzyko_2v2_crt_progi',
+        'klasa': 'KontrolerFuzzyRyzyko2v2CrtProgi',
+        'metoda': 'fuzzy_ryzyko_crt_progi',
+        'opis': 'Jak fuzzy_ryzyko_2v2, ale 4 twarde progi (przed silnikiem rozmytym) czytają CRT (szyna '
+                'zimna) zamiast HRT - błąd regulacji zostaje względem HRT - '
+                'funkcja_fuzzy_ryzyko_2v2_crt_progi.py.',
+        'bezpiecznik': True,
+        'typ': 'Fuzzy logic (FL2v2, binarny, 7 reguł, progi na CRT)',
+        'cel': 'Funkcja ryzyka (Kalman)',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) amortyzowane, skok co 300 kroków (Kalman + cyfrowy bliźniak 7200 kroków)',
+        'flops_na_krok': 499,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu',
+        'pamiec_przyblizona_mb': 21.0,
+    },
+    'fuzzy_ryzyko_2v2_crt_pelny': {
+        'modul': 'funkcja_fuzzy_ryzyko_2v2_crt_pelny',
+        'klasa': 'KontrolerFuzzyRyzyko2v2CrtPelny',
+        'metoda': 'fuzzy_ryzyko_crt_pelny',
+        'opis': 'Jak fuzzy_ryzyko_2v2, ale CAŁA decyzja (4 progi + błąd regulacji zasilający silnik '
+                'rozmyty) liczona względem CRT (szyna zimna) - jedyny wyznacznik - '
+                'funkcja_fuzzy_ryzyko_2v2_crt_pelny.py.',
+        'bezpiecznik': True,
+        'typ': 'Fuzzy logic (FL2v2, binarny, 7 reguł, w całości na CRT)',
+        'cel': 'Funkcja ryzyka (Kalman)',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) amortyzowane, skok co 300 kroków (Kalman + cyfrowy bliźniak 7200 kroków)',
+        'flops_na_krok': 499,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu',
+        'pamiec_przyblizona_mb': 21.0,
+    },
+    'fuzzy_ryzyko_3': {
+        'modul': 'funkcja_fuzzy_ryzyko_3',
+        'klasa': 'KontrolerFuzzyRyzyko3',
+        'metoda': 'fuzzy_ryzyko',
+        'opis': 'Cel z funkcji ryzyka, wykonawczo silnik FL3 (PWM) - funkcja_fuzzy_ryzyko_3.py.',
+        'bezpiecznik': True,
+        'typ': 'Fuzzy logic (FL3, PWM)',
+        'cel': 'Funkcja ryzyka (Kalman)',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) amortyzowane, skok co 300 kroków (Kalman + cyfrowy bliźniak 7200 kroków)',
+        'flops_na_krok': 492,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu',
+        'pamiec_przyblizona_mb': 21.0,
+    },
+    'fuzzy_normy_1': {
+        'modul': 'funkcja_fuzzy_normy_1',
+        'klasa': 'KontrolerFuzzyNormy1',
+        'metoda': 'fuzzy_normy',
+        'opis': 'Cel z progów normy LET-1, wykonawczo silnik FL1 (ciągłe) - funkcja_fuzzy_normy_1.py.',
+        'bezpiecznik': True,
+        'typ': 'Fuzzy logic (FL1, ciągły)',
+        'cel': 'Progi normy LET-1',
+        'adaptacyjny': False,
+        'zlozonosc_czasowa': 'O(1) na krok',
+        'flops_na_krok': 40,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) - dziedziczona pamięć czujników (niewykorzystywana)',
+        'pamiec_przyblizona_mb': 18.0,
+    },
+    'fuzzy_normy_2': {
+        'modul': 'funkcja_fuzzy_normy_2',
+        'klasa': 'KontrolerFuzzyNormy2',
+        'metoda': 'fuzzy_normy',
+        'opis': 'Cel z progów normy LET-1, wykonawczo silnik FL2 (binarne) - funkcja_fuzzy_normy_2.py.',
+        'bezpiecznik': True,
+        'typ': 'Fuzzy logic (FL2, binarny)',
+        'cel': 'Progi normy LET-1',
+        'adaptacyjny': False,
+        'zlozonosc_czasowa': 'O(1) na krok',
+        'flops_na_krok': 40,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) - dziedziczona pamięć czujników (niewykorzystywana)',
+        'pamiec_przyblizona_mb': 18.0,
+    },
+    'fuzzy_normy_2v2': {
+        'modul': 'funkcja_fuzzy_normy_2v2',
+        'klasa': 'KontrolerFuzzyNormy2v2',
+        'metoda': 'fuzzy_normy',
+        'opis': 'Cel z progów normy LET-1, wykonawczo silnik FL2v2 (binarne, 7 reguł) - funkcja_fuzzy_normy_2v2.py.',
+        'bezpiecznik': True,
+        'typ': 'Fuzzy logic (FL2v2, binarny, 7 reguł)',
+        'cel': 'Progi normy LET-1',
+        'adaptacyjny': False,
+        'zlozonosc_czasowa': 'O(1) na krok',
+        'flops_na_krok': 48,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) - dziedziczona pamięć czujników (niewykorzystywana)',
+        'pamiec_przyblizona_mb': 18.0,
+    },
+    'fuzzy_normy_3': {
+        'modul': 'funkcja_fuzzy_normy_3',
+        'klasa': 'KontrolerFuzzyNormy3',
+        'metoda': 'fuzzy_normy',
+        'opis': 'Cel z progów normy LET-1, wykonawczo silnik FL3 (PWM) - funkcja_fuzzy_normy_3.py.',
+        'bezpiecznik': True,
+        'typ': 'Fuzzy logic (FL3, PWM)',
+        'cel': 'Progi normy LET-1',
+        'adaptacyjny': False,
+        'zlozonosc_czasowa': 'O(1) na krok',
+        'flops_na_krok': 42,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) - dziedziczona pamięć czujników (niewykorzystywana)',
+        'pamiec_przyblizona_mb': 18.0,
+    },
+    'risk_function_opad': {
+        'modul': 'funkcja_ryzyka_binarna_opad',
+        'klasa': 'KontrolerRyzykaBinarnyOpad',
+        'metoda': 'risk_function_opad',
+        'opis': 'Jak risk_function, plus prognoza opadu (przewidywanie_opadow.py) - nie grzeje na zapas, gdy front '
+                'kończy się a pokrywa jest cienka - funkcja_ryzyka_binarna_opad.py.',
+        'bezpiecznik': True,
+        'typ': 'Histereza',
+        'cel': 'Funkcja ryzyka (Kalman) + prognoza opadu',
+        'adaptacyjny': False,
+        'zlozonosc_czasowa': 'O(1) amortyzowane, skok co 300 kroków (Kalman) + rzadkie wywołania prognozy opadu',
+        'flops_na_krok': 155,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200))',
+        'pamiec_przyblizona_mb': 18.0,
+    },
+    'risk_function_pid_opad': {
+        'modul': 'funkcja_ryzyka_pid_opad',
+        'klasa': 'KontrolerRyzykaPIDOpad',
+        'metoda': 'risk_function_pid_opad',
+        'opis': 'Jak risk_function_pid, plus prognoza opadu (przewidywanie_opadow.py) - nie grzeje na zapas, gdy '
+                'front kończy się a pokrywa jest cienka - funkcja_ryzyka_pid_opad.py.',
+        'bezpiecznik': True,
+        'typ': 'PID (PI, SIMC)',
+        'cel': 'Funkcja ryzyka (Kalman) + prognoza opadu',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) amortyzowane, skok co 300 kroków (Kalman + cyfrowy bliźniak) + rzadkie wywołania prognozy opadu',
+        'flops_na_krok': 465,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu',
+        'pamiec_przyblizona_mb': 21.0,
+    },
+    'fuzzy_ryzyko_1_opad': {
+        'modul': 'funkcja_fuzzy_ryzyko_1_opad',
+        'klasa': 'KontrolerFuzzyRyzyko1Opad',
+        'metoda': 'fuzzy_ryzyko_opad',
+        'opis': 'Jak fuzzy_ryzyko_1, plus prognoza opadu (przewidywanie_opadow.py) - funkcja_fuzzy_ryzyko_1_opad.py.',
+        'bezpiecznik': True,
+        'typ': 'Fuzzy logic (FL1, ciągły)',
+        'cel': 'Funkcja ryzyka (Kalman) + prognoza opadu',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) amortyzowane, skok co 300 kroków (Kalman + cyfrowy bliźniak) + rzadkie wywołania prognozy opadu',
+        'flops_na_krok': 505,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu',
+        'pamiec_przyblizona_mb': 21.0,
+    },
+    'fuzzy_ryzyko_2_opad': {
+        'modul': 'funkcja_fuzzy_ryzyko_2_opad',
+        'klasa': 'KontrolerFuzzyRyzyko2Opad',
+        'metoda': 'fuzzy_ryzyko_opad',
+        'opis': 'Jak fuzzy_ryzyko_2, plus prognoza opadu (przewidywanie_opadow.py) - funkcja_fuzzy_ryzyko_2_opad.py.',
+        'bezpiecznik': True,
+        'typ': 'Fuzzy logic (FL2, binarny)',
+        'cel': 'Funkcja ryzyka (Kalman) + prognoza opadu',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) amortyzowane, skok co 300 kroków (Kalman + cyfrowy bliźniak) + rzadkie wywołania prognozy opadu',
+        'flops_na_krok': 505,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu',
+        'pamiec_przyblizona_mb': 21.0,
+    },
+    'fuzzy_ryzyko_2v2_opad': {
+        'modul': 'funkcja_fuzzy_ryzyko_2v2_opad',
+        'klasa': 'KontrolerFuzzyRyzyko2v2Opad',
+        'metoda': 'fuzzy_ryzyko_opad',
+        'opis': 'Jak fuzzy_ryzyko_2v2, plus prognoza opadu (przewidywanie_opadow.py) - funkcja_fuzzy_ryzyko_2v2_opad.py.',
+        'bezpiecznik': True,
+        'typ': 'Fuzzy logic (FL2v2, binarny, 7 reguł)',
+        'cel': 'Funkcja ryzyka (Kalman) + prognoza opadu',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) amortyzowane, skok co 300 kroków (Kalman + cyfrowy bliźniak) + rzadkie wywołania prognozy opadu',
+        'flops_na_krok': 513,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu',
+        'pamiec_przyblizona_mb': 21.0,
+    },
+    'fuzzy_ryzyko_2v2_opad_crt_progi': {
+        'modul': 'funkcja_fuzzy_ryzyko_2v2_opad_crt_progi',
+        'klasa': 'KontrolerFuzzyRyzyko2v2OpadCrtProgi',
+        'metoda': 'fuzzy_ryzyko_opad_crt_progi',
+        'opis': 'Jak fuzzy_ryzyko_2v2_opad, ale 4 twarde progi czytają CRT (szyna zimna) zamiast HRT - '
+                'błąd regulacji zostaje względem HRT - '
+                'funkcja_fuzzy_ryzyko_2v2_opad_crt_progi.py.',
+        'bezpiecznik': True,
+        'typ': 'Fuzzy logic (FL2v2, binarny, 7 reguł, progi na CRT)',
+        'cel': 'Funkcja ryzyka (Kalman) + prognoza opadu',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) amortyzowane, skok co 300 kroków (Kalman + cyfrowy bliźniak) + rzadkie wywołania prognozy opadu',
+        'flops_na_krok': 514,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu',
+        'pamiec_przyblizona_mb': 21.0,
+    },
+    'fuzzy_ryzyko_2v2_opad_crt_pelny': {
+        'modul': 'funkcja_fuzzy_ryzyko_2v2_opad_crt_pelny',
+        'klasa': 'KontrolerFuzzyRyzyko2v2OpadCrtPelny',
+        'metoda': 'fuzzy_ryzyko_opad_crt_pelny',
+        'opis': 'Jak fuzzy_ryzyko_2v2_opad, ale CAŁA decyzja liczona względem CRT (szyna zimna) - jedyny '
+                'wyznacznik - funkcja_fuzzy_ryzyko_2v2_opad_crt_pelny.py.',
+        'bezpiecznik': True,
+        'typ': 'Fuzzy logic (FL2v2, binarny, 7 reguł, w całości na CRT)',
+        'cel': 'Funkcja ryzyka (Kalman) + prognoza opadu',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) amortyzowane, skok co 300 kroków (Kalman + cyfrowy bliźniak) + rzadkie wywołania prognozy opadu',
+        'flops_na_krok': 514,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu',
+        'pamiec_przyblizona_mb': 21.0,
+    },
+    'nauka_kary': {
+        'modul': 'funkcja_nauka_kary_pid',
+        'klasa': 'KontrolerNaukaKaryPID',
+        'metoda': 'nauka_kary',
+        'opis': 'Cel z progów normy LET-1 + adaptacyjny czynnik uczony z kar (przegrzanie/śnieg/lód), '
+                'czysto reaktywny (bez prognozy) - funkcja_nauka_kary_pid.py.',
+        'bezpiecznik': True,
+        'typ': 'PID (PI, uczący się z kar)',
+        'cel': 'Progi normy LET-1 + nauczony czynnik',
+        'adaptacyjny': False,
+        'zlozonosc_czasowa': 'O(1) na krok, aktualizacja uczenia raz na dobę',
+        'flops_na_krok': 30,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + log uczenia (rośnie ~1 wpis/dobę)',
+        'pamiec_przyblizona_mb': 18.0,
+    },
+    'nauka_kary_temp': {
+        'modul': 'funkcja_nauka_kary_pid_temp',
+        'klasa': 'KontrolerNaukaKaryPIDTemp',
+        'metoda': 'nauka_kary',
+        'opis': 'Jak nauka_kary, plus prognoza temperatury powietrza (Kalman) - wyprzedzający bonus do celu '
+                'i wyprzedzająca kara przy głębokim mrozie w prognozie - funkcja_nauka_kary_pid_temp.py.',
+        'bezpiecznik': True,
+        'typ': 'PID (PI, uczący się z kar)',
+        'cel': 'Progi normy LET-1 + nauczony czynnik + prognoza temperatury',
+        'adaptacyjny': False,
+        'zlozonosc_czasowa': 'O(1) amortyzowane, skok co 300 kroków (Kalman)',
+        'flops_na_krok': 165,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + log uczenia',
+        'pamiec_przyblizona_mb': 18.0,
+    },
+    'nauka_kary_opad': {
+        'modul': 'funkcja_nauka_kary_pid_opad',
+        'klasa': 'KontrolerNaukaKaryPIDOpad',
+        'metoda': 'nauka_kary',
+        'opis': 'Jak nauka_kary, plus prognoza opadu (przewidywanie_opadow.py) - wyprzedzający bonus przy '
+                'nadchodzącym froncie, szybszy zanik czynnika przy kończącym się froncie i cienkiej pokrywie - '
+                'funkcja_nauka_kary_pid_opad.py.',
+        'bezpiecznik': True,
+        'typ': 'PID (PI, uczący się z kar)',
+        'cel': 'Progi normy LET-1 + nauczony czynnik + prognoza opadu',
+        'adaptacyjny': False,
+        'zlozonosc_czasowa': 'O(1) amortyzowane, skok co 300 kroków (Kalman) + rzadkie wywołania prognozy opadu',
+        'flops_na_krok': 175,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + log uczenia',
+        'pamiec_przyblizona_mb': 18.0,
+    },
+    'nauka_kary_blizniak': {
+        'modul': 'funkcja_nauka_kary_pid_blizniak',
+        'klasa': 'KontrolerNaukaKaryPIDBlizniak',
+        'metoda': 'nauka_kary',
+        'opis': 'Jak nauka_kary, ale ADAPTACYJNY (autotest + cyfrowy bliźniak) - wyprzedzająca kara liczona z '
+                'przewidywanej trajektorii HRT (fizyczny model reakcji obiektu na już wydane komendy), nie z '
+                'prognozy pogody - funkcja_nauka_kary_pid_blizniak.py.',
+        'bezpiecznik': True,
+        'typ': 'PID (PI, SIMC, uczący się z kar)',
+        'cel': 'Progi normy LET-1 + nauczony czynnik + prognoza cyfrowego bliźniaka',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) amortyzowane, skok co 300 kroków (Kalman + cyfrowy bliźniak 7200 kroków)',
+        'flops_na_krok': 470,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu + log uczenia',
+        'pamiec_przyblizona_mb': 21.0,
+    },
+    'nauka_kary_ryzyko': {
+        'modul': 'funkcja_nauka_kary_pid_ryzyko',
+        'klasa': 'KontrolerNaukaKaryPIDRyzyko',
+        'metoda': 'nauka_kary',
+        'opis': 'Najbardziej zaawansowany wariant - ŁĄCZY prognozę temperatury, opadu i cyfrowego bliźniaka w '
+                'JEDNĄ złożoną ocenę ryzyka i uczy się na jej podstawie (adaptacyjny, autotest) - '
+                'funkcja_nauka_kary_pid_ryzyko.py.',
+        'bezpiecznik': True,
+        'typ': 'PID (PI, SIMC, uczący się z kar)',
+        'cel': 'Progi normy LET-1 + nauczony czynnik + złożone ryzyko (temp+opad+bliźniak)',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) amortyzowane, skok co 300 kroków (Kalman + cyfrowy bliźniak) + rzadkie wywołania prognozy opadu',
+        'flops_na_krok': 640,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu + log uczenia',
+        'pamiec_przyblizona_mb': 21.0,
+    },
+    'mpc_liniowy': {
+        'modul': 'funkcja_mpc_liniowy',
+        'klasa': 'KontrolerMPCLiniowy',
+        'metoda': 'mpc_liniowy',
+        'opis': 'Regulator predykcyjny (MPC) - co 15 min rozwiązuje QP (scipy L-BFGS-B) na 8-blokowym horyzoncie '
+                '2h, minimalizując energię + karę za deficyt wobec progu z funkcji ryzyka + karę za skoki mocy. '
+                'Zaburzenie (CRT) na horyzoncie ZAKŁADANE STAŁE (wariant kontrolny bez prognozy pogody) - '
+                'funkcja_mpc_liniowy.py, mpc_wspolne.py.',
+        'bezpiecznik': True,
+        'typ': 'MPC (QP, model SOPDT blokowy)',
+        'cel': 'Funkcja ryzyka (Kalman) - optymalizacja trajektorii BEZ prognozy pogody',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) na krok, skok co 900s (blok 15-min) - rozwiązanie QP (8 zmiennych, kilkadziesiąt iteracji L-BFGS-B)',
+        'flops_na_krok': 800,  # ZMIERZONE (nie szacowane analitycznie - solver czyni to bezcelowym, patrz nagłówek pliku): stats['flops_rzeczywiste']/liczba_kroków z 3-dniowego przebiegu testowego (abisko_60min_2021, krok 10s).
+        'zlozonosc_pamieciowa': 'O(1) (bufor kroczący) + bufory autotestu/modelu blokowego',
+        'pamiec_przyblizona_mb': 3.0,
+    },
+    'mpc_prognoza_pogody': {
+        'modul': 'funkcja_mpc_prognoza',
+        'klasa': 'KontrolerMPCPrognoza',
+        'metoda': 'mpc_prognoza',
+        'opis': 'Jak mpc_liniowy, ale zaburzenie (CRT) na horyzoncie brane z prognozy Kalmana, a cel/próg '
+                'bezpieczeństwa z wariantu funkcji ryzyka Z prognozą opadu (przewidywanie_opadow.py) - "pełna" '
+                'wersja MPC wykorzystująca wszystkie dostępne prognozy. Kluczowe porównanie z mpc_liniowy: czysta '
+                'wartość dodana prognozy pogody przy pełnej optymalizacji trajektorii - funkcja_mpc_prognoza.py.',
+        'bezpiecznik': True,
+        'typ': 'MPC (QP, model SOPDT blokowy)',
+        'cel': 'Funkcja ryzyka (Kalman) + prognoza opadu - optymalizacja trajektorii Z prognozą pogody',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) na krok, skok co 900s (blok 15-min) - rozwiązanie QP (8 zmiennych, kilkadziesiąt iteracji L-BFGS-B) + rzadkie wywołania prognozy opadu',
+        'flops_na_krok': 805,  # ZMIERZONE (patrz komentarz przy mpc_liniowy) - z tego samego 3-dniowego przebiegu testowego.
+        'zlozonosc_pamieciowa': 'O(1) (bufor kroczący) + bufory autotestu/modelu blokowego',
+        'pamiec_przyblizona_mb': 3.0,
+    },
+    'mpc_miekkie_ograniczenia': {
+        'modul': 'funkcja_mpc_miekkie',
+        'klasa': 'KontrolerMPCMiekkie',
+        'metoda': 'mpc_miekkie',
+        'opis': 'Jak mpc_prognoza_pogody (ta sama prognoza CRT/opadu, ten sam cel), ale INNY kształt kary za '
+                'zbliżanie się do progu bezpieczeństwa w funkcji kosztu MPC: bariera wykładnicza (rośnie już PRZED '
+                'przekroczeniem progu, szybciej niż kwadratowo po przekroczeniu) zamiast kary czysto progowej '
+                '(zero aż do przekroczenia). Test wpływu SAMEGO KSZTAŁTU kary na kompromis energia/bezpieczeństwo '
+                '- funkcja_mpc_miekkie.py, mpc_wspolne.py.',
+        'bezpiecznik': True,
+        'typ': 'MPC (QP, model SOPDT blokowy, bariera wykładnicza)',
+        'cel': 'Funkcja ryzyka (Kalman) + prognoza opadu - optymalizacja trajektorii z barierą bezpieczeństwa',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) na krok, skok co 900s (blok 15-min) - rozwiązanie QP (8 zmiennych, kilkadziesiąt iteracji L-BFGS-B) + rzadkie wywołania prognozy opadu',
+        'flops_na_krok': 805,  # SZACUNEK po analogii do mpc_prognoza_pogody (identyczna struktura kosztu solvera, jedyna różnica to inny wzór skalarny w _kara_bezpieczenstwa_mpc) - do zmierzenia realnie przy najbliższym pełnym przebiegu testowym.
+        'zlozonosc_pamieciowa': 'O(1) (bufor kroczący) + bufory autotestu/modelu blokowego',
+        'pamiec_przyblizona_mb': 3.0,
+    },
+    'mpc_liniowy_zabezpieczony': {
+        'modul': 'funkcja_mpc_liniowy_zabezpieczony',
+        'klasa': 'KontrolerMPCLiniowyZabezpieczony',
+        'metoda': 'mpc_liniowy_zabezpieczony',
+        'opis': 'Jak mpc_liniowy, plus DWIE warstwy zabezpieczeń przed uszkodzonym czujnikiem/identyfikacją '
+                '(patrz mpc_wspolne._MPCMachineryMixinZabezpieczony i notatki/algorytmy/mpc.md): 1) odrzuca '
+                'dopasowanie SOPDT, jeśli autotest() ucięty przedwcześnie (np. przez obciążony odczyt HRT) trafił '
+                'w dolne ograniczenia solvera identyfikacji - zostaje wtedy na bezpiecznym regulatorze P zamiast '
+                'planować na zdegenerowanym modelu; 2) krzyżowo weryfikuje BIEŻĄCY pomiar HRT z własną predykcją '
+                'modelu blokowego, odrzucając odczyt zbyt rozbieżny. Dodane 2026-09-15 po wykryciu w teście '
+                'awaryjności czujników (+157% energii pod HRT_bias dla mpc_liniowy), OBOK niezabezpieczonej wersji '
+                '- porównanie pokazuje wartość tych zabezpieczeń wprost.',
+        'bezpiecznik': True,
+        'typ': 'MPC (QP, model SOPDT blokowy, zabezpieczony)',
+        'cel': 'Funkcja ryzyka (Kalman) - optymalizacja trajektorii BEZ prognozy pogody, z kontrolą wiarygodności',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'Jak mpc_liniowy - O(1) na krok, skok co 900s (blok 15-min), plus stały narzut kontroli wiarygodności (porównanie skalarów)',
+        'flops_na_krok': 806,  # mpc_liniowy (800) + narzut _wiarygodny_pomiar_hrt (~6 FLOPs/krok, patrz mpc_wspolne.py).
+        'zlozonosc_pamieciowa': 'O(1) (bufor kroczący) + bufory autotestu/modelu blokowego',
+        'pamiec_przyblizona_mb': 3.0,
+    },
+    'mpc_prognoza_pogody_zabezpieczony': {
+        'modul': 'funkcja_mpc_prognoza_zabezpieczony',
+        'klasa': 'KontrolerMPCPrognozaZabezpieczony',
+        'metoda': 'mpc_prognoza_zabezpieczony',
+        'opis': 'Jak mpc_prognoza_pogody, plus te same DWIE warstwy zabezpieczeń co mpc_liniowy_zabezpieczony '
+                '(patrz tam pełny opis) - mpc_wspolne._MPCMachineryMixinZabezpieczony.',
+        'bezpiecznik': True,
+        'typ': 'MPC (QP, model SOPDT blokowy, zabezpieczony)',
+        'cel': 'Funkcja ryzyka (Kalman) + prognoza opadu - optymalizacja trajektorii Z prognozą pogody, z kontrolą wiarygodności',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'Jak mpc_prognoza_pogody - O(1) na krok, skok co 900s (blok 15-min), plus stały narzut kontroli wiarygodności',
+        'flops_na_krok': 811,  # mpc_prognoza_pogody (805) + narzut _wiarygodny_pomiar_hrt (~6 FLOPs/krok).
+        'zlozonosc_pamieciowa': 'O(1) (bufor kroczący) + bufory autotestu/modelu blokowego',
+        'pamiec_przyblizona_mb': 3.0,
+    },
+    'mpc_miekkie_ograniczenia_zabezpieczony': {
+        'modul': 'funkcja_mpc_miekkie_zabezpieczony',
+        'klasa': 'KontrolerMPCMiekkieZabezpieczony',
+        'metoda': 'mpc_miekkie_zabezpieczony',
+        'opis': 'Jak mpc_miekkie_ograniczenia, plus te same DWIE warstwy zabezpieczeń co mpc_liniowy_zabezpieczony '
+                '(patrz tam pełny opis) - mpc_wspolne._MPCMachineryMixinZabezpieczony.',
+        'bezpiecznik': True,
+        'typ': 'MPC (QP, model SOPDT blokowy, bariera wykładnicza, zabezpieczony)',
+        'cel': 'Funkcja ryzyka (Kalman) + prognoza opadu - optymalizacja trajektorii z barierą bezpieczeństwa, z kontrolą wiarygodności',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'Jak mpc_miekkie_ograniczenia - O(1) na krok, skok co 900s (blok 15-min), plus stały narzut kontroli wiarygodności',
+        'flops_na_krok': 811,  # mpc_miekkie_ograniczenia (805) + narzut _wiarygodny_pomiar_hrt (~6 FLOPs/krok).
+        'zlozonosc_pamieciowa': 'O(1) (bufor kroczący) + bufory autotestu/modelu blokowego',
+        'pamiec_przyblizona_mb': 3.0,
+    },
+    'mpc_binarny': {
+        'modul': 'funkcja_mpc_binarny',
+        'klasa': 'KontrolerMPCBinarny',
+        'metoda': 'mpc_binarny',
+        'opis': 'Jak mpc_liniowy (ten sam model blokowy, cel, częstotliwość przeplanowania co 900s), ale moc na '
+                'blok OGRANICZONA do {0%, 100%} (przekaźnik załącz/wyłącz, jak większość pozostałych algorytmów '
+                'projektu) zamiast wyjścia ciągłego - rozwiązywane WYCZERPUJĄCYM przeszukaniem 2^8=256 kombinacji '
+                '(dokładne optimum globalne, nie relaksacja+zaokrąglenie) wg tej samej funkcji kosztu co wariant '
+                'ciągły (mpc_wspolne._MPCMachineryMixinBinarny). Porównanie z mpc_liniowy (RÓŻNI SIĘ WYŁĄCZNIE '
+                'dopuszczalnym zbiorem mocy) izoluje czysty koszt dyskretyzacji na przekaźnik binarny względem '
+                'regulacji ciągłej (SSR/PWM). Dodane 2026-09-15 na życzenie użytkownika - funkcja_mpc_binarny.py.',
+        'bezpiecznik': True,
+        'typ': 'MPC (przeszukanie wyczerpujące, model SOPDT blokowy, wyjście binarne)',
+        'cel': 'Funkcja ryzyka (Kalman) - optymalizacja trajektorii BEZ prognozy pogody, moc binarna',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) na krok, skok co 900s (blok 15-min) - przeszukanie wyczerpujące 2^8=256 kombinacji, każda O(horyzont)',
+        'flops_na_krok': 850,  # SZACUNEK po analogii do mpc_liniowy (800) - 256 ewaluacji _koszt_mpc amortyzowane na 900s vs. kilkadziesiąt iteracji L-BFGS-B, ten sam rząd wielkości.
+        'zlozonosc_pamieciowa': 'O(1) (bufor kroczący) + bufory autotestu/modelu blokowego',
+        'pamiec_przyblizona_mb': 3.0,
+    },
+    'mpc_prognoza_binarny': {
+        'modul': 'funkcja_mpc_prognoza_binarny',
+        'klasa': 'KontrolerMPCPrognozaBinarny',
+        'metoda': 'mpc_prognoza_binarny',
+        'opis': 'Jak mpc_prognoza_pogody (ten sam model blokowy, prognoza Kalmana, cel z prognozą opadu), ale moc '
+                'na blok OGRANICZONA do {0%, 100%} zamiast wyjścia ciągłego - rozwiązywane wyczerpującym '
+                'przeszukaniem 2^8=256 kombinacji, jak mpc_binarny (patrz tam pełne uzasadnienie). Dodane '
+                '2026-09-15, żeby porównanie ciągłe-vs-binarne było kompletne na wszystkich 3 wariantach MPC, nie '
+                'tylko mpc_liniowy/mpc_binarny - funkcja_mpc_prognoza_binarny.py.',
+        'bezpiecznik': True,
+        'typ': 'MPC (przeszukanie wyczerpujące, model SOPDT blokowy, wyjście binarne)',
+        'cel': 'Funkcja ryzyka (Kalman) + prognoza opadu - optymalizacja trajektorii Z prognozą pogody, moc binarna',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) na krok, skok co 900s (blok 15-min) - przeszukanie wyczerpujące 2^8=256 kombinacji, każda O(horyzont)',
+        'flops_na_krok': 855,  # SZACUNEK po analogii do mpc_binarny (850) + narzut prognozy opadu jak mpc_prognoza_pogody vs mpc_liniowy (+5).
+        'zlozonosc_pamieciowa': 'O(1) (bufor kroczący) + bufory autotestu/modelu blokowego',
+        'pamiec_przyblizona_mb': 3.0,
+    },
+    'mpc_miekkie_binarny': {
+        'modul': 'funkcja_mpc_miekkie_binarny',
+        'klasa': 'KontrolerMPCMiekkieBinarny',
+        'metoda': 'mpc_miekkie_binarny',
+        'opis': 'Jak mpc_miekkie_ograniczenia (ten sam model blokowy, prognoza, bariera wykładnicza), ale moc na '
+                'blok OGRANICZONA do {0%, 100%} zamiast wyjścia ciągłego - rozwiązywane wyczerpującym '
+                'przeszukaniem 2^8=256 kombinacji, jak mpc_binarny (patrz tam pełne uzasadnienie). Dodane '
+                '2026-09-15, żeby porównanie ciągłe-vs-binarne było kompletne na wszystkich 3 wariantach MPC - '
+                'funkcja_mpc_miekkie_binarny.py.',
+        'bezpiecznik': True,
+        'typ': 'MPC (przeszukanie wyczerpujące, model SOPDT blokowy, bariera wykładnicza, wyjście binarne)',
+        'cel': 'Funkcja ryzyka (Kalman) + prognoza opadu - optymalizacja trajektorii z barierą bezpieczeństwa, moc binarna',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) na krok, skok co 900s (blok 15-min) - przeszukanie wyczerpujące 2^8=256 kombinacji, każda O(horyzont)',
+        'flops_na_krok': 855,  # SZACUNEK po analogii do mpc_prognoza_binarny (identyczna struktura kosztu, jedyna różnica to inny wzór skalarny w _kara_bezpieczenstwa_mpc).
+        'zlozonosc_pamieciowa': 'O(1) (bufor kroczący) + bufory autotestu/modelu blokowego',
+        'pamiec_przyblizona_mb': 3.0,
+    },
+    'fuzzy_ryzyko_3_opad': {
+        'modul': 'funkcja_fuzzy_ryzyko_3_opad',
+        'klasa': 'KontrolerFuzzyRyzyko3Opad',
+        'metoda': 'fuzzy_ryzyko_opad',
+        'opis': 'Jak fuzzy_ryzyko_3, plus prognoza opadu (przewidywanie_opadow.py) - funkcja_fuzzy_ryzyko_3_opad.py.',
+        'bezpiecznik': True,
+        'typ': 'Fuzzy logic (FL3, PWM)',
+        'cel': 'Funkcja ryzyka (Kalman) + prognoza opadu',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) amortyzowane, skok co 300 kroków (Kalman + cyfrowy bliźniak) + rzadkie wywołania prognozy opadu',
+        'flops_na_krok': 507,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu',
+        'pamiec_przyblizona_mb': 21.0,
+    },
+    'fuzzy_ryzyko_adaptacyjny': {
+        'modul': 'funkcja_fuzzy_ryzyko_adaptacyjny',
+        'klasa': 'KontrolerFuzzyRyzykoAdaptacyjny',
+        'metoda': 'fuzzy_ryzyko_adaptacyjny',
+        'opis': 'Jak fuzzy_ryzyko_1 (cel z funkcji ryzyka, wykonawczo silnik FL1), plus AUTOMATYCZNE STROJENIE '
+                'progów funkcji przynależności silnika rozmytego (prog_chlodno/prog_mrozno/prog_lodowato_dolny/'
+                'prog_lodowato_gorny - patrz silniki_fuzzy.wnioskowanie_fl_parametryzowane), tą samą metodą '
+                '"perturb-and-observe" co risk_function_pid_auto (co 7 dni: koszt = zużyta moc + kara za '
+                'przekroczony próg śniegu/lodu/przegrzania; spadek kosztu -> kontynuacja kierunku, wzrost -> '
+                'odwrócenie) - odpowiednik SIMC dla progów rozmytych, którego fuzzy_ryzyko_1 explicite nie ma. '
+                'Dodane 2026-09-15 na życzenie użytkownika - funkcja_fuzzy_ryzyko_adaptacyjny.py.',
+        'bezpiecznik': True,
+        'typ': 'Fuzzy logic (FL1, adaptacyjne progi)',
+        'cel': 'Funkcja ryzyka (Kalman)',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) na krok (silnik FL1, 40 FLOPs) + O(1) amortyzowane, skok co 7 dni (aktualizacja 4 progów)',
+        'flops_na_krok': 45,  # Silnik FL1 (40) + rejestracja kar/całki strojenia (~5, amortyzowane jak w risk_function_pid_auto).
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu + log strojenia',
+        'pamiec_przyblizona_mb': 21.0,
+    },
+    'fuzzy_ryzyko_agresywny': {
+        'modul': 'funkcja_fuzzy_ryzyko_agresywny',
+        'klasa': 'KontrolerFuzzyRyzykoAgresywny',
+        'metoda': 'fuzzy_ryzyko_agresywny',
+        'opis': 'Jak fuzzy_ryzyko_1 (cel z funkcji ryzyka, wykonawczo silnik FL1), ale z WYRAŹNIE OSTRZEJSZĄ '
+                'reakcją na pogarszające się warunki (silniki_fuzzy.wnioskowanie_fl_agresywne) - zacieśnione '
+                'granice OK/chłodno/mroźno (1.5/3.5°C zamiast 3.0/6.0°C) i próg "lodowato" (-12/-8°C zamiast '
+                '-15/-12°C, pełna moc przy łagodniejszym mrozie), podniesiona moc pośrednia LOW/MED (50%/85% '
+                'zamiast 25%/60%) - ta sama matematyka Sugeno co FL1, inny kształt zbiorów rozmytych, bez '
+                'dodatkowych reguł/mnożników po fakcie. Dodane 2026-09-15 na życzenie użytkownika ("mocniej '
+                'karaj... żeby znacznie mocniej reagował na warunki złe") jako OSOBNY algorytm - '
+                'funkcja_fuzzy_ryzyko_agresywny.py.',
+        'bezpiecznik': True,
+        'typ': 'Fuzzy logic (FL1, agresywny)',
+        'cel': 'Funkcja ryzyka (Kalman)',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) na krok (silnik FL1, 40 FLOPs)',
+        'flops_na_krok': 40,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu',
+        'pamiec_przyblizona_mb': 21.0,
+    },
+    'histereza_pamiec_rosy': {
+        'modul': 'histereza_pamiec_rosy',
+        'klasa': 'KontrolerHisterezaPamiecRosy',
+        'metoda': 'compute_control',
+        'opis': 'Histereza z punktem rosy, inspirowana polityką "P_mem" (Chiaradonna i in. 2021, Sustainable '
+                'Computing: Informatics and Systems 30) - załącza grzanie, gdy HRT <= punkt_rosy + T_thr ORAZ '
+                'HRT <= T_thr (jedyny algorytm w projekcie faktycznie czytający PUNKT_ROSY_C). Wykrywa "zawieszenie" '
+                'odczytu punktu rosy (brak zmiany przez DELTA_M_KROKOW kolejnych kroków - naturalny odpowiednik '
+                'awarii łącza z pracy) i wtedy przechodzi na politykę bazową (sam próg temperatury, bez punktu '
+                'rosy) - histereza_pamiec_rosy.py.',
+        'bezpiecznik': True,
+        'typ': 'Histereza (próg + punkt rosy, z pamięcią)',
+        'cel': 'Punkt rosy + próg referencyjny T_thr (fallback na sam próg przy zawieszonym odczycie)',
+        'adaptacyjny': False,
+        'zlozonosc_czasowa': 'O(1) na krok',
+        'flops_na_krok': 12,
+        'zlozonosc_pamieciowa': 'O(1) (bufor kroczący dziedziczony z KontrolerBazowy, nieużywany do prognozy)',
+        'pamiec_przyblizona_mb': 0.5,
+    },
+    'risk_function_ladrc': {
+        'modul': 'funkcja_ryzyka_ladrc',
+        'klasa': 'KontrolerRyzykaLADRC',
+        'metoda': 'risk_function_ladrc',
+        'opis': 'Jak risk_function_pid, ale regulacja wokół celu przez LINIOWE ADRC (Gao 2003 - Extended State '
+                'Observer + liniowe prawo sterowania, "bandwidth-parameterization") zamiast PI - '
+                'funkcja_ryzyka_ladrc.py, funkcja_ryzyka_adrc_wspolne.py.',
+        'bezpiecznik': True,
+        'typ': 'ADRC (liniowy, ESO 2-stanowy)',
+        'cel': 'Funkcja ryzyka (Kalman)',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) amortyzowane, skok co 300 kroków (Kalman + cyfrowy bliźniak 7200 kroków)',
+        'flops_na_krok': 455,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu',
+        'pamiec_przyblizona_mb': 21.0,
+    },
+    'risk_function_nadrc': {
+        'modul': 'funkcja_ryzyka_nadrc',
+        'klasa': 'KontrolerRyzykaNADRC',
+        'metoda': 'risk_function_nadrc',
+        'opis': 'Jak risk_function_ladrc, ale NIELINIOWE ADRC (Han 2009 - oryginalna wersja z funkcją fal() w '
+                'obserwatorze i prawie sterowania) zamiast liniowego - łagodniejszy przyrost mocy przy dużych '
+                'błędach/skokach, skalibrowany tak, by w wąskiej strefie liniowej pokrywać się z LADRC - '
+                'funkcja_ryzyka_nadrc.py, funkcja_ryzyka_adrc_wspolne.py.',
+        'bezpiecznik': True,
+        'typ': 'ADRC (nieliniowy, fal(), ESO 2-stanowy)',
+        'cel': 'Funkcja ryzyka (Kalman)',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) amortyzowane, skok co 300 kroków (Kalman + cyfrowy bliźniak 7200 kroków)',
+        'flops_na_krok': 465,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu',
+        'pamiec_przyblizona_mb': 21.0,
+    },
+    'predykcja_wygladzanie_prosta': {
+        'modul': 'predykcja_wygladzanie_prosta',
+        'klasa': 'KontrolerPredykcjaWygladzanie',
+        'metoda': 'compute_control',
+        'opis': 'Regulator progowy na PROGNOZIE (nie bieżącym odczycie) HRT, inspirowany polityką "P_pre" '
+                '(Chiaradonna i in. 2021) - lekkie wygładzanie wykładnicze Holta (poziom+trend) na WŁASNEJ '
+                'historii HRT (binowanej co 15 min), CAŁKOWICIE ODDZIELNE od wspólnej prognozy Kalmana '
+                '(rdzen_kontrolera) używanej przez risk_function_pid/mpc_*. Próg efektywny SAMOKALIBRUJĄCY SIĘ: '
+                '= próg bazowy + własny, na bieżąco śledzony średni błąd bezwzględny prognozy (ε_f) - jedyny '
+                'algorytm w projekcie z marginesem bezpieczeństwa wynikającym z historii własnej trafności, nie '
+                'stałą - predykcja_wygladzanie_prosta.py.',
+        'bezpiecznik': True,
+        'typ': 'Regulator progowy (prognoza Holta, margines samokalibrujący)',
+        'cel': 'Prognoza HRT (wygładzanie wykładnicze) + próg bazowy + margines = śledzony błąd własnej prognozy',
+        'adaptacyjny': False,
+        'zlozonosc_czasowa': 'O(1) na krok, skok co ~900s (zamknięcie binu 15-min)',
+        'flops_na_krok': 15,
+        'zlozonosc_pamieciowa': 'O(MAX_BLEDOW_W_PAMIECI=50) (lista błędów prognozy) + O(1) (bufor kroczący, nieużywany do prognozy)',
+        'pamiec_przyblizona_mb': 0.5,
+    },
+}
+
+
+def stworz_kontroler(nazwa, **kwargs):
+    """Tworzy instancję kontrolera po nazwie z ALGORYTMY. Zwraca (kontroler, nazwa_metody)."""
+    if nazwa not in ALGORYTMY:
+        dostepne = ', '.join(ALGORYTMY.keys())
+        raise ValueError(f"Nieznany algorytm '{nazwa}'. Dostępne: {dostepne}")
+
+    wpis = ALGORYTMY[nazwa]
+    modul = __import__(wpis['modul'])
+    klasa = getattr(modul, wpis['klasa'])
+    kontroler = klasa(**kwargs)
+    return kontroler, wpis['metoda']
+
+
+def podlega_bezpiecznikowi(nazwa):
+    """Czy dany algorytm w porównaniach dostaje śnieg/moc normy jako referencję bezpieczeństwa."""
+    return ALGORYTMY[nazwa].get('bezpiecznik', False)

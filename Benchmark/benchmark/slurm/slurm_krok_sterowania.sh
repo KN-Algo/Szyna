@@ -28,7 +28,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=64
 #SBATCH --mem=500G
-#SBATCH --time=01:00:00
+#SBATCH --time=01:30:00
 #SBATCH -p lem-cpu
 #SBATCH --output=szyna_krok_sterowania_%j.log
 # --time ZMNIEJSZONE 2026-09-15 (lokalizacje ograniczone do 4, patrz
