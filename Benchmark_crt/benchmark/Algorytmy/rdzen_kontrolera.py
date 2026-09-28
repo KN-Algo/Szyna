@@ -13,6 +13,7 @@
 # wpisu w rejestr_algorytmow.py) - każdy właściwy algorytm dziedziczy po niej
 # (bezpośrednio albo przez funkcja_ryzyka_wspolne.KontrolerRyzykaBazowy).
 
+import os
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
@@ -92,7 +93,10 @@ AUTOTEST_STAB_RATE_THRESHOLD_C_PER_S = 0.0008  # Poniżej tego tempa zmian (z re
 # ESTYMATOR GRUBOŚCI ŚNIEGU (bilans masy z odczytów, BEZ dostępu do prawdziwej
 # grubości z modelu fizycznego) - patrz KontrolerBazowy._estymuj_grubosc_sniegu_mm.
 # ==========================================
-SNIEG_TOPNIENIE_MM_S_NA_C = 0.001  # Szacowane tempo topnienia pokrywy pod wpływem HRT>0°C [mm/s na °C].
+SNIEG_TOPNIENIE_MM_S_NA_C = 0.001  # Szacowane tempo topnienia pokrywy pod wpływem temperatury szyny >0°C [mm/s na °C].
+# BENCHMARK_CRT: która temperatura topi pokrywę w estymatorze - 'CRT' (domyślnie) albo 'HRT'.
+# Nadpisywalne zmienną SZYNA_SNIEG_TOPNIENIE_SYGNAL (procesy robocze czytają ją przy imporcie).
+SNIEG_TOPNIENIE_SYGNAL = os.environ.get('SZYNA_SNIEG_TOPNIENIE_SYGNAL', 'CRT').strip().upper()
 
 
 @njit(cache=True)
@@ -323,11 +327,16 @@ class KontrolerBazowy:
         skazi też ten bilans), bez potrzeby osobnego mechanizmu zaszumiania.
         """
         snow_rate_mm_s = float(row_data.get('SNOW_snieg', 0.0))
-        hrt_temp = float(row_data.get('HRT_temp_grzana', 0.0))
+        # BENCHMARK_CRT (2026-09-28, na życzenie użytkownika - "zależy nam na wytopieniu śniegu w
+        # całości, CRT ma nam mówić, ile tego śniegu jest"): topnienie liczone z CRT, nie z HRT.
+        # Pokrywa jest uznana za stopioną dopiero, gdy ROZGRZANA jest też szyna zimna -
+        # ostrożniej (dłużej "widzi" śnieg) niż wariant z HRT. SNIEG_TOPNIENIE_SYGNAL='HRT' przywraca stare.
+        klucz_temp = 'CRT_temp_niegrzana' if SNIEG_TOPNIENIE_SYGNAL == 'CRT' else 'HRT_temp_grzana'
+        temp_topnienia = float(row_data.get(klucz_temp, 0.0))
         dt = self._dt_sterowania
 
         przyrost = snow_rate_mm_s * dt
-        ubytek = SNIEG_TOPNIENIE_MM_S_NA_C * max(hrt_temp, 0.0) * dt
+        ubytek = SNIEG_TOPNIENIE_MM_S_NA_C * max(temp_topnienia, 0.0) * dt
 
         self._snieg_estymowany_mm = max(0.0, self._snieg_estymowany_mm + przyrost - ubytek)
         self._dodaj_flopy(4)  # 2 mnożenia (przyrost, ubytek) + odjęcie + max/clip.

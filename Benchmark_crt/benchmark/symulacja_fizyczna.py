@@ -384,6 +384,7 @@ def uruchom_kontroler(name, controller, method_name, df_1s, hrt_weather_all,
     x_h = np.zeros((A_hd.shape[0], 1))
     x_ch = np.zeros((A_chd.shape[0], 1))  # BENCHMARK_CRT (2026-09-28): stan kanału moc -> ΔCRT.
     current_hrt = 0.7
+    crt_heating_comp = 0.0  # wkład grzania w CRT z POPRZEDNIEGO kroku - czytany przez czujnik CRT kontrolera (patrz row niżej).
     snow_depth_history = np.zeros(len(df_1s))
     power_history = np.zeros(len(df_1s))
 
@@ -498,7 +499,11 @@ def uruchom_kontroler(name, controller, method_name, df_1s, hrt_weather_all,
 
         row = {
             'Timestamp': ts,
-            'CRT_temp_niegrzana': hrt_weather_comp,
+            # BENCHMARK_CRT (2026-09-28, na życzenie użytkownika): kontroler czyta PRAWDZIWE CRT
+            # (pogoda + słaby/wolny wkład grzania z poprzedniego kroku, tak jak HRT niżej jest
+            # z poprzedniego kroku), NIE samą składową pogodową - CRT jest głównym wyznacznikiem
+            # i ma "mówić" kontrolerowi też, ile śniegu zostało (patrz _estymuj_grubosc_sniegu_mm).
+            'CRT_temp_niegrzana': hrt_weather_comp + crt_heating_comp,
             'HRT_temp_grzana': current_hrt,
             'AT_temp_powietrza': at_temp,
             'RH_wilgotnosc_wzgledna': round(calculated_rh, 1),

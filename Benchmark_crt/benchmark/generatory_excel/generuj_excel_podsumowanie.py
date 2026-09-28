@@ -103,6 +103,7 @@ NAZWY_ALGORYTMOW = {
     'risk_function_pid_auto': 'Funkcja ryzyka (PID, auto-strojenie)',
     'risk_function_cascade_pi': 'Funkcja ryzyka (kaskada 2x PI: CRT->HRT)',
     'risk_function_cascade_pi_opad': 'Funkcja ryzyka (kaskada 2x PI) + opad',
+    'risk_function_pi_binarny': 'Funkcja ryzyka (PI binarny, histereza 2°C)',
     'norma_pid': 'PID z normą',
     'fuzzy_logic_1': 'Fuzzy Logic 1 (ciągły)',
     'fuzzy_logic_2': 'Fuzzy Logic 2 (binarny)',

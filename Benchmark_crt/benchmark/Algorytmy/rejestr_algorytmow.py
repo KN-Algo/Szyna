@@ -229,6 +229,22 @@ ALGORYTMY = {
         'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu',
         'pamiec_przyblizona_mb': 21.0,
     },
+    'risk_function_pi_binarny': {
+        'modul': 'funkcja_ryzyka_pi_binarny',
+        'klasa': 'KontrolerRyzykaPIBinarny',
+        'metoda': 'risk_function_pi_binarny',
+        'opis': 'Regulator PI z wyjściem BINARNYM (0/100%): błąd względem CRT z członem całkującym (Ti z SIMC, '
+                'anty-windup) trafia do przekaźnika Schmitta z pętlą histerezy 2°C (załącz przy +1°C, wyłącz przy '
+                '-1°C) - funkcja_ryzyka_pi_binarny.py. Dodany 2026-09-28 na życzenie użytkownika.',
+        'bezpiecznik': True,
+        'typ': 'PI binarny (histereza)',
+        'cel': 'Funkcja ryzyka (Kalman) - CRT',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) amortyzowane, skok co 300 kroków (Kalman + cyfrowy bliźniak 7200 kroków)',
+        'flops_na_krok': 455,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu',
+        'pamiec_przyblizona_mb': 21.0,
+    },
     'norma_pid': {
         'modul': 'funkcja_pid_normy',
         'klasa': 'KontrolerNormaPID',
