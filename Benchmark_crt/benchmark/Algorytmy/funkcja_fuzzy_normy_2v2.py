@@ -16,19 +16,13 @@ class KontrolerFuzzyNormy2v2(KontrolerNormyCiaglaBazowy):
         self.max_switches_per_day = max_switches_per_day
 
     def fuzzy_normy(self, row_data):
-        hrt_temp = float(row_data['HRT_temp_grzana'])
+        hrt_temp = float(row_data['CRT_temp_niegrzana'])  # ZMIANA: jedyny wyznacznik, wszędzie zamiast HRT
         precip = float(row_data['PRECIP_opad'])
         snow = float(row_data['SNOW_snieg'])
         at_temp = float(row_data['AT_temp_powietrza'])
         target_temperature, need_heat, reason = self._evaluate_norm_setpoint(row_data)
 
         if hrt_temp < -10.0:
-            power_percent = 100.0
-        elif hrt_temp >= 6.0:
-            power_percent = 0.0
-        elif hrt_temp >= 3.0 and at_temp < 0.0:
-            power_percent = 0.0
-        elif at_temp <= -15.0 and hrt_temp < 10.0:
             power_percent = 100.0
         else:
             jest_snieg = snow > 0.0

@@ -25,7 +25,7 @@ class KontrolerFuzzyRyzyko2v2Opad(KontrolerRyzykaOpadBazowy):
         if self._autotest_startowy(row_data):
             return self._ostatnia_moc_autotestu, {'faza': 'autotest', 'autotest_wynik': self.autotest_result}
 
-        hrt_temp = float(row_data['HRT_temp_grzana'])
+        hrt_temp = float(row_data['CRT_temp_niegrzana'])
         precip = float(row_data['PRECIP_opad'])
         snow = float(row_data['SNOW_snieg'])
         at_temp = float(row_data['AT_temp_powietrza'])
@@ -33,12 +33,6 @@ class KontrolerFuzzyRyzyko2v2Opad(KontrolerRyzykaOpadBazowy):
             self._evaluate_risk_setpoint_z_opadem(row_data)
 
         if hrt_temp < -10.0:
-            power_percent = 100.0
-        elif hrt_temp >= 6.0:
-            power_percent = 0.0
-        elif hrt_temp >= 3.0 and at_temp < 0.0:
-            power_percent = 0.0
-        elif at_temp <= -15.0 and hrt_temp < 10.0:
             power_percent = 100.0
         else:
             jest_snieg = snow > 0.0

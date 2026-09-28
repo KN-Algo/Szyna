@@ -19,7 +19,7 @@ class KontrolerFuzzy2v2:
         self._flops_licznik = 0  # Licznik RZECZYWISTYCH FLOPs - patrz rdzen_kontrolera.KontrolerBazowy._dodaj_flopy.
 
     def compute_control(self, row_data):
-        hrt = float(row_data['HRT_temp_grzana'])
+        hrt = float(row_data['CRT_temp_niegrzana'])  # ZMIANA: jedyny wyznacznik, wszędzie zamiast HRT
         precip = float(row_data['PRECIP_opad'])
         snow = float(row_data['SNOW_snieg'])
         at_temp = float(row_data['AT_temp_powietrza'])

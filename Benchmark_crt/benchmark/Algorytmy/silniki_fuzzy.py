@@ -117,18 +117,34 @@ def wnioskowanie_fl_podstawowe(blad_T, hrt, jest_snieg, jest_deszcz):
 
 
 
+def wyznacz_trend_z_pamiacia(t_aktualna, t_poprzednia, stan_poprzedni="rosnie", tolerancja=0.01):
+    """
+    Zwraca 'rosnie' lub 'spada'. 
+    Jeśli temperatura się nie zmieniła (w granicach tolerancji), 
+    zwraca stan_poprzedni.
+    """
+    if t_poprzednia is None:
+        return stan_poprzedni
+
+    roznica = t_aktualna - t_poprzednia
+
+    if roznica > tolerancja:
+        return 0.0 #Rośnie
+    elif roznica < -tolerancja:
+        return 100.0 #Spada
+    else:
+        return stan_poprzedni  # Bez zmian – zostawiamy to co było
+
 def wnioskowanie_fl2v2(blad_T, hrt, ryzyko, jest_snieg, jest_deszcz, at_temp):
     """Rdzeń wnioskowania FL2v2."""
-    if hrt >= 3.0:
-        return 0.0
-    if hrt > 0.0 and at_temp < 0.0:
-        return 0.0
-    if hrt > -5.0 and at_temp <= -10.0:
+    if hrt >= 4.0:
         return 0.0
     if hrt <= -8.0:
         return 100.0
-    if at_temp >= 3.0:
+    if at_temp >= 5.0:
         return 0.0
+    if hrt > -5.0 and at_temp <= -10.0:
+        return wyznacz_trend_z_pamiacia(hrt, hrt, "rosnie", 0.01)  # Bez zmian – zostawiamy to co było
 
     t_ok = rampa_malejaca(blad_T, 0.0, 3.0)
     t_chlodno = trojkat(blad_T, 0.0, 3.0, 6.0)
