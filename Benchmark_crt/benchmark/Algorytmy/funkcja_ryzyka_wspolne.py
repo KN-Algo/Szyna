@@ -148,6 +148,11 @@ class KontrolerRyzykaBazowy(KontrolerBazowy):
         # WSPÓLNEJ stałej modułowej (co zepsułoby WSZYSTKIE inne kontrolery w
         # tym samym procesie roboczym).
         self.risk_snow_penalty_per_mm_c = RISK_SNOW_PENALTY_PER_MM_C
+        # Analogicznie promowane do atrybutów instancji (domyślnie = stałe
+        # modułowe, zero zmiany zachowania) - żeby MPC (mpc_wspolne) mógł
+        # podstawić progi z kolumny HRT normy zamiast CRT, per instancja.
+        self.risk_freezing_rain_target_c = RISK_FREEZING_RAIN_TARGET_C
+        self.risk_snow_penalty_max_c = RISK_SNOW_PENALTY_MAX_C
         # _ostatnia_moc_autotestu i _autotest_startowy przeniesione do
         # rdzen_kontrolera.KontrolerBazowy (żeby były dostępne dla każdego
         # kontrolera, nie tylko rodziny funkcji ryzyka) - dziedziczone stąd bez zmian.
@@ -322,7 +327,7 @@ class KontrolerRyzykaBazowy(KontrolerBazowy):
         # risk_function*/fuzzy_ryzyko_*, gdzie blad_T = target - CRT). ---
         if is_freezing_rain:
             need_heat = True
-            target_temperature = RISK_FREEZING_RAIN_TARGET_C
+            target_temperature = self.risk_freezing_rain_target_c
             reason = 'marznący deszcz - grzanie bezwarunkowe'
         elif is_snowing or snow_depth_mm > RISK_SNOW_LINGER_THRESHOLD_MM:
             if warmup_soon and snow_depth_mm <= RISK_SNOW_LINGER_THRESHOLD_MM:
@@ -339,7 +344,7 @@ class KontrolerRyzykaBazowy(KontrolerBazowy):
                     reason = powod_ucieczki
                 else:
                     need_heat = True
-                    penalty = min(snow_depth_mm * self.risk_snow_penalty_per_mm_c, RISK_SNOW_PENALTY_MAX_C)
+                    penalty = min(snow_depth_mm * self.risk_snow_penalty_per_mm_c, self.risk_snow_penalty_max_c)
                     target_temperature = self.hrt_on_precip + penalty
                     if snow_depth_mm > RISK_SNOW_LINGER_THRESHOLD_MM:
                         reason = f'zalegający śnieg ({snow_depth_mm:.0f} mm) - cel podniesiony o {penalty:.1f}°C, żeby go porządnie wytopić'

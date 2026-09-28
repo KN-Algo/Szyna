@@ -83,6 +83,18 @@ MOC_ZAMIANOWA_GRZALKI_KW = 14.0
 # w uruchom_kontroler niżej - patrz nagłówek pliku po pełne uzasadnienie.
 HRT_LIMIT_OSTRZEGAWCZY_C = 45.0
 
+# BENCHMARK_CRT (2026-09-28, na życzenie użytkownika - "DO KAŻDEGO ALGORYTMU
+# nie licząc fuzzy dodać zabezpieczenie termiczne max 45 stopni"): od teraz
+# 45°C to nie tylko monitoring, ale ENFORCED odcięcie mocy (jak zabezpieczenie
+# realnego urządzenia) dla wszystkich algorytmów OPRÓCZ fuzzy (nazwa zawiera
+# 'fuzzy' - te dalej tylko monitorowane, jak dotąd). Zabezpieczenie zatrzaskuje
+# się przy HRT >= 45°C i puszcza dopiero po ostygnięciu poniżej
+# 45 - HRT_ZABEZP_HISTEREZA_C - bez histerezy moc migałaby co krok wokół 45°C
+# (skok D*u modelu grzania to ~2,3°C na pełną moc), zawyżając licznik
+# przełączeń. UWAGA: wartość histerezy (5°C) to ZAŁOŻENIE - nie znamy
+# rzeczywistego progu powrotu zabezpieczenia w urządzeniu.
+HRT_ZABEZP_HISTEREZA_C = 5.0
+
 # --- PARAMETRY MODELU OBIEKTU (z realnych danych Wrocław Popowice, 2026-09-25 -
 # patrz Identyfikacja/notatki_identyfikacja/wyniki.md, sekcje "Model AT -> CRT"
 # i "Ranking modeli" kanału PWR) - ZASTĘPUJE dotychczasowe main_test.py. ---
@@ -293,7 +305,7 @@ def _get_power(controller, row, method_name):
 def uruchom_kontroler(name, controller, method_name, df_1s, hrt_weather_all,
                        A_hd, B_hd, C_hd, D_hd, punkty_opoznienia, dt=1.0,
                        snow_reference_mm=None, power_reference_pct=None, print_progress=True,
-                       fault_injector=None):
+                       fault_injector=None, zabezpieczenie_termiczne_45c=None):
     """
     Uruchamia pełną symulację (transmitancja grzania + SnowClimPhysicalModel)
     sterowaną przez podany kontroler, krok po kroku (1 s).
@@ -333,6 +345,15 @@ def uruchom_kontroler(name, controller, method_name, df_1s, hrt_weather_all,
     """
     if print_progress:
         print(f"--- Symulacja wariantu: {name} ---")
+    # BENCHMARK_CRT (2026-09-28): zabezpieczenie termiczne 45°C ENFORCED dla
+    # wszystkich algorytmów oprócz fuzzy (patrz HRT_ZABEZP_HISTEREZA_C). None =
+    # auto wg nazwy ('fuzzy' w nazwie -> bez zabezpieczenia), True/False =
+    # wymuszenie ręczne.
+    if zabezpieczenie_termiczne_45c is None:
+        zabezpieczenie_termiczne_45c = 'fuzzy' not in str(name).lower()
+    zabezp_zatrzasniete = False
+    czas_zabezp_termicznego_s = 0.0
+    kroki_zabezp_termicznego = 0
     ice_model = SnowClimPhysicalModel(latitude_deg=SUWALKI_LATITUDE_DEG)
 
     # Informujemy kontroler o RZECZYWISTYM kroku, w jakim będzie odpytywany -
@@ -407,8 +428,11 @@ def uruchom_kontroler(name, controller, method_name, df_1s, hrt_weather_all,
     # tak jak min_hrt/max_snieg_mm/zabezpieczen_normy_uzytych - to statystyki
     # WYNIKU symulacji, nie tego, co widział/czym kierował się kontroler). ---
     kara_bezpieczenstwa_suma = 0.0
+    kara_bezpieczenstwa_crt_suma = 0.0
     epizody_ponizej_floor = 0
     byl_ponizej_floor = False
+    epizody_ponizej_floor_crt = 0
+    byl_ponizej_floor_crt = False
     # BENCHMARK_CRT (2026-09-27): monitoring HRT>45°C - patrz HRT_LIMIT_OSTRZEGAWCZY_C w nagłówku pliku.
     epizody_powyzej_45c_hrt = 0
     byl_powyzej_45c_hrt = False
@@ -497,6 +521,20 @@ def uruchom_kontroler(name, controller, method_name, df_1s, hrt_weather_all,
                 power_percent = moc_normy
                 zabezpieczen_uzytych += 1
 
+        # BENCHMARK_CRT (2026-09-28): zabezpieczenie termiczne 45°C - działa
+        # OSTATNIE (po bezpieczniku normy, który mógłby podnieść moc), na HRT z
+        # POPRZEDNIEGO kroku (current_hrt jeszcze nieaktualizowane w tej iteracji).
+        if zabezpieczenie_termiczne_45c:
+            if current_hrt >= HRT_LIMIT_OSTRZEGAWCZY_C:
+                zabezp_zatrzasniete = True
+            elif current_hrt < HRT_LIMIT_OSTRZEGAWCZY_C - HRT_ZABEZP_HISTEREZA_C:
+                zabezp_zatrzasniete = False
+            if zabezp_zatrzasniete:
+                czas_zabezp_termicznego_s += dt
+                if power_percent > 0.0:
+                    kroki_zabezp_termicznego += 1
+                power_percent = 0.0
+
         power_history[index] = power_percent
 
         # u_delayed czytany wstecz z power_history zamiast osobnej listy
@@ -583,22 +621,42 @@ def uruchom_kontroler(name, controller, method_name, df_1s, hrt_weather_all,
         is_freezing_rain_prawdziwy = is_raining_prawdziwy and (current_crt <= 1.0 or at_temp <= 1.0)
         marznacy_deszcz_deficyt_c = (2.0 - current_hrt) if (is_freezing_rain_prawdziwy and current_hrt < 2.0) else 0.0
         floor_deficyt_c = max(0.0, RISK_HRT_ABSOLUTE_FLOOR_C - current_hrt)
+        # BENCHMARK_CRT (2026-09-28, na życzenie użytkownika - kara ma liczyć też
+        # to, co dzieje się na CRT): te same dwa deficyty (marznący deszcz przy
+        # szynie wciąż < 2°C, poniżej floora -10°C) liczone ADDITIONALNIE dla CRT,
+        # z tymi samymi wagami. UWAGA: CRT jest głównie napędzane pogodą (słabe
+        # sprzężenie z grzaniem), więc ta składowa różnicuje algorytmy słabo -
+        # jest raportowana też osobno ('kara_bezpieczenstwa_crt'), żeby było widać
+        # ile z sumy to CRT.
+        marznacy_deszcz_deficyt_crt_c = (2.0 - current_crt) if (is_freezing_rain_prawdziwy and current_crt < 2.0) else 0.0
+        floor_deficyt_crt_c = max(0.0, RISK_HRT_ABSOLUTE_FLOOR_C - current_crt)
 
+        kara_crt_krok = dt * (
+            marznacy_deszcz_deficyt_crt_c * KARA_WAGA_MROZ_DESZCZ
+            + floor_deficyt_crt_c * KARA_WAGA_FLOOR
+        )
+        kara_bezpieczenstwa_crt_suma += kara_crt_krok
         kara_bezpieczenstwa_suma += dt * (
             snow_excess_mm * KARA_WAGA_SNIEG_C_PER_MM
             + marznacy_deszcz_deficyt_c * KARA_WAGA_MROZ_DESZCZ
             + floor_deficyt_c * KARA_WAGA_FLOOR
-        )
+        ) + kara_crt_krok
         for etykieta, (m_snieg, m_mroz, m_floor) in KARA_WAGI_SCENARIUSZE.items():
             kara_bezpieczenstwa_scenariusze[etykieta] += dt * (
                 snow_excess_mm * KARA_WAGA_SNIEG_C_PER_MM * m_snieg
                 + marznacy_deszcz_deficyt_c * KARA_WAGA_MROZ_DESZCZ * m_mroz
                 + floor_deficyt_c * KARA_WAGA_FLOOR * m_floor
+                + marznacy_deszcz_deficyt_crt_c * KARA_WAGA_MROZ_DESZCZ * m_mroz
+                + floor_deficyt_crt_c * KARA_WAGA_FLOOR * m_floor
             )
         ponizej_floor_teraz = current_hrt < RISK_HRT_ABSOLUTE_FLOOR_C
         if ponizej_floor_teraz and not byl_ponizej_floor:
             epizody_ponizej_floor += 1
         byl_ponizej_floor = ponizej_floor_teraz
+        ponizej_floor_crt_teraz = current_crt < RISK_HRT_ABSOLUTE_FLOOR_C
+        if ponizej_floor_crt_teraz and not byl_ponizej_floor_crt:
+            epizody_ponizej_floor_crt += 1
+        byl_ponizej_floor_crt = ponizej_floor_crt_teraz
 
         # BENCHMARK_CRT (2026-09-27): monitoring HRT>45°C - patrz HRT_LIMIT_OSTRZEGAWCZY_C.
         powyzej_45c_teraz = current_hrt > HRT_LIMIT_OSTRZEGAWCZY_C
@@ -666,6 +724,15 @@ def uruchom_kontroler(name, controller, method_name, df_1s, hrt_weather_all,
         # BENCHMARK_CRT (2026-09-27): monitoring HRT>45°C - patrz HRT_LIMIT_OSTRZEGAWCZY_C w nagłówku pliku.
         'epizody_powyzej_45c_hrt': epizody_powyzej_45c_hrt,
         'czas_powyzej_45c_hrt_s': czas_powyzej_45c_hrt_s,
+        # BENCHMARK_CRT (2026-09-28): to, co dzieje się na CRT + zabezpieczenie termiczne.
+        'min_crt': df_hist['CRT'].min(),
+        'max_crt': df_hist['CRT'].max(),
+        'kara_bezpieczenstwa_crt': kara_bezpieczenstwa_crt_suma,
+        'kara_bezpieczenstwa_hrt': kara_bezpieczenstwa_suma - kara_bezpieczenstwa_crt_suma,  # śnieg + HRT (floor/marznący deszcz)
+        'epizody_ponizej_floor_crt': epizody_ponizej_floor_crt,
+        'zabezp_termiczne_aktywne': int(bool(zabezpieczenie_termiczne_45c)),
+        'czas_zabezp_termicznego_s': czas_zabezp_termicznego_s,
+        'kroki_zabezp_termicznego': kroki_zabezp_termicznego,
     }
     # Analiza wrażliwości wag kary bezpieczeństwa - jedna dodatkowa kolumna na
     # scenariusz (patrz KARA_WAGI_SCENARIUSZE), prefiks 'kara_bezpieczenstwa__'.

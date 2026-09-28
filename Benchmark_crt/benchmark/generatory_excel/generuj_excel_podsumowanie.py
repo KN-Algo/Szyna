@@ -29,6 +29,7 @@ from openpyxl.formatting.rule import FormulaRule, ColorScaleRule
 from openpyxl.utils import get_column_letter
 from openpyxl.chart import LineChart, Reference
 import glob
+from datetime import datetime
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # benchmark/ (rodzic generatory_excel/)
 sys.path.insert(0, os.path.join(BASE_DIR, 'Algorytmy'))
@@ -40,7 +41,14 @@ from rejestr_algorytmow import ALGORYTMY  # noqa: E402 - opisy/typ/cel/adaptacyj
 FOLDER_WYNIKOW = os.environ.get(
     'SZYNA_FOLDER_WYNIKOW', os.path.join(BASE_DIR, "wyniki", "przeglad_wielu_lokalizacji"))
 SCIEZKA_CSV = os.path.join(FOLDER_WYNIKOW, "PRZEGLAD_ZBIORCZY.csv")
-SCIEZKA_XLSX = os.path.join(FOLDER_WYNIKOW, "Podsumowanie_wynikow.xlsx")
+# BENCHMARK_CRT (2026-09-28, na życzenie użytkownika - "w tytułach excela dodać
+# datę oraz godzinę, żeby wiedzieć skąd ten plik jest"): plik dostaje w nazwie
+# znacznik czasu generacji. Dodatkowo zapisywana jest kopia pod STAŁĄ nazwą
+# (SCIEZKA_XLSX_STALA) - czyta ją generuj_excel_wrazliwosc_transmitancji.py.
+ZNACZNIK_CZASU = datetime.now().strftime('%Y-%m-%d_%H-%M')
+CZAS_GENERACJI_TEKST = datetime.now().strftime('%Y-%m-%d %H:%M')
+SCIEZKA_XLSX = os.path.join(FOLDER_WYNIKOW, f"Podsumowanie_wynikow_{ZNACZNIK_CZASU}.xlsx")
+SCIEZKA_XLSX_STALA = os.path.join(FOLDER_WYNIKOW, "Podsumowanie_wynikow.xlsx")
 # SZYNA_FOLDER_CSV_SZCZEGOLOWE - ta sama zmienna co w test_wszystkie_rownolegle.py:
 # jeśli przy LICZENIU przekierowano ciężkie pliki (*_uczenie.csv, pełna
 # trajektoria) gdzie indziej niż FOLDER_WYNIKOW (np. duża przestrzeń PD na
@@ -93,6 +101,8 @@ NAZWY_ALGORYTMOW = {
     'risk_function': 'Funkcja ryzyka (binarna)',
     'risk_function_pid': 'Funkcja ryzyka (PID)',
     'risk_function_pid_auto': 'Funkcja ryzyka (PID, auto-strojenie)',
+    'risk_function_cascade_pi': 'Funkcja ryzyka (kaskada 2x PI: CRT->HRT)',
+    'risk_function_cascade_pi_opad': 'Funkcja ryzyka (kaskada 2x PI) + opad',
     'norma_pid': 'PID z normą',
     'fuzzy_logic_1': 'Fuzzy Logic 1 (ciągły)',
     'fuzzy_logic_2': 'Fuzzy Logic 2 (binarny)',
@@ -198,6 +208,9 @@ def main():
     df = pd.read_csv(SCIEZKA_CSV)
     df[['Lokalizacja', 'Interwal', 'Rok']] = df['lokalizacja'].apply(lambda x: pd.Series(parsuj_lokalizacje(x)))
     df['Algorytm'] = df['name'].map(NAZWY_ALGORYTMOW)
+    # Kara HRT = kara całkowita - składowa CRT (dane sprzed rozdzielenia: cała kara = HRT).
+    if 'kara_bezpieczenstwa' in df.columns and 'kara_bezpieczenstwa_hrt' not in df.columns:
+        df['kara_bezpieczenstwa_hrt'] = df['kara_bezpieczenstwa'] - df.get('kara_bezpieczenstwa_crt', 0.0)
 
     wb = Workbook()
 
@@ -233,7 +246,12 @@ def main():
                       'IAE (°C·s)', 'ISE (°C²·s)', 'ITAE (°C·s²)',
                       'Min HRT (°C)', 'Kara bezpieczeństwa (°C·s)', 'Epizody HRT<-10°C',
                       'IAE % vs norma LET-1', 'ISE % vs norma LET-1', 'ITAE % vs norma LET-1',
-                      'Kara bezp. % vs norma LET-1', 'Epizody HRT>45°C', 'Czas HRT>45°C (h)']
+                      'Kara bezp. % vs norma LET-1', 'Epizody HRT>45°C', 'Czas HRT>45°C (h)',
+                      # BENCHMARK_CRT (2026-09-28): kolumny DOPISANE NA KOŃCU (V-AB), żeby nie
+                      # przesuwać liter A-U używanych w formułach/formatowaniu warunkowym.
+                      'Energia % vs norma LET-1', 'Przełączenia % vs norma LET-1',
+                      'Min CRT (°C)', 'Kara CRT (°C·s)', 'Kara CRT % vs norma LET-1',
+                      'Epizody CRT<-10°C', 'Zabezp. termiczne 45°C aktywne (h)']
     ustaw_naglowek(ws_dane, 1, naglowki_dane)
 
     # --- % WZGLĘDEM NORMY LET-1 (algorytm_z_normy = ALGORYTM_BAZOWY) - na życzenie
@@ -242,15 +260,13 @@ def main():
     # bo IAE/kara zależą silnie od konkretnej pogody tego przebiegu, a nie tylko
     # algorytmu. ---
     baseline_lookup = {}
-    if ma_iae or ma_kara:
-        baza_df = df[df['Algorytm'] == ALGORYTM_BAZOWY].set_index(['Lokalizacja', 'Interwal', 'Rok'])
-        for klucz, wiersz_bazowy in baza_df.iterrows():
-            baseline_lookup[klucz] = {
-                'iae': wiersz_bazowy.get('iae'),
-                'ise': wiersz_bazowy.get('ise'),
-                'itae': wiersz_bazowy.get('itae'),
-                'kara_bezpieczenstwa': wiersz_bazowy.get('kara_bezpieczenstwa'),
-            }
+    baza_df = df[df['Algorytm'] == ALGORYTM_BAZOWY].set_index(['Lokalizacja', 'Interwal', 'Rok'])
+    for klucz, wiersz_bazowy in baza_df.iterrows():
+        baseline_lookup[klucz] = {
+            pole: wiersz_bazowy.get(pole)
+            for pole in ('iae', 'ise', 'itae', 'kara_bezpieczenstwa', 'energia_kwh', 'przelaczenia',
+                         'kara_bezpieczenstwa_crt', 'kara_bezpieczenstwa_hrt', 'srednia_moc_pct')
+        }
 
     def _pct_vs_norma(wartosc, klucz_baseline, pole):
         if pd.isna(wartosc):
@@ -259,6 +275,23 @@ def main():
         if baza is None or pd.isna(baza) or baza == 0:
             return None
         return (float(wartosc) - float(baza)) / float(baza) * 100.0
+
+    # Kolumny % vs norma dla wszystkich mierzonych wielkości (używane w "Dane" i w
+    # zakładce "Procenty_vs_norma"). Brak kolumny źródłowej (dane sprzed zmian) -> None.
+    def _dodaj_pct(kolumna_zrodlo, kolumna_wynik):
+        if kolumna_zrodlo not in df.columns:
+            df[kolumna_wynik] = None
+            return
+        df[kolumna_wynik] = [
+            _pct_vs_norma(v, (lok, itv, rok), kolumna_zrodlo)
+            for v, lok, itv, rok in zip(df[kolumna_zrodlo], df['Lokalizacja'], df['Interwal'], df['Rok'])
+        ]
+    for zrodlo, wynik in [('energia_kwh', 'pct_energia'), ('przelaczenia', 'pct_przelaczenia'),
+                          ('iae', 'pct_iae'), ('ise', 'pct_ise'), ('itae', 'pct_itae'),
+                          ('kara_bezpieczenstwa', 'pct_kara'), ('kara_bezpieczenstwa_crt', 'pct_kara_crt'),
+                          ('kara_bezpieczenstwa_hrt', 'pct_kara_hrt'), ('srednia_moc_pct', 'pct_moc')]:
+        _dodaj_pct(zrodlo, wynik)
+    ma_crt = 'min_crt' in df.columns
 
     ma_flopy = 'flops_rzeczywiste' in df.columns
     for i, wiersz in enumerate(df.itertuples(index=False), start=2):
@@ -292,6 +325,17 @@ def main():
                     round(kara_pct, 1) if kara_pct is not None else None,
                     int(epizody_50c) if pd.notna(epizody_50c) else None,
                     round(czas_50c_s / 3600.0, 2) if pd.notna(czas_50c_s) else None]
+        # Kolumny V-AB (BENCHMARK_CRT, 2026-09-28) - % vs norma + rzeczy dziejące się na CRT.
+        def _zaokr(x, n=1):
+            return round(float(x), n) if (x is not None and pd.notna(x)) else None
+        kara_crt = getattr(wiersz, 'kara_bezpieczenstwa_crt', None) if ma_crt else None
+        epizody_crt = getattr(wiersz, 'epizody_ponizej_floor_crt', None) if ma_crt else None
+        zabezp_s = getattr(wiersz, 'czas_zabezp_termicznego_s', None) if ma_crt else None
+        wartosci += [_zaokr(wiersz.pct_energia), _zaokr(wiersz.pct_przelaczenia),
+                     _zaokr(getattr(wiersz, 'min_crt', None) if ma_crt else None, 2),
+                     _zaokr(kara_crt), _zaokr(wiersz.pct_kara_crt),
+                     int(epizody_crt) if (epizody_crt is not None and pd.notna(epizody_crt)) else None,
+                     _zaokr(zabezp_s / 3600.0, 2) if (zabezp_s is not None and pd.notna(zabezp_s)) else None]
         for j, wartosc in enumerate(wartosci, start=1):
             komorka = ws_dane.cell(row=i, column=j, value=wartosc)
             komorka.font = FONT_ZWYKLY
@@ -300,12 +344,12 @@ def main():
                 komorka.alignment = WYROWNANIE_SRODEK
             if j == 9:
                 komorka.number_format = '0.00E+00'
-            if j in (16, 17, 18, 19):
+            if j in (16, 17, 18, 19, 22, 23, 26):
                 komorka.number_format = '+0.0"%";-0.0"%"'
 
     ostatni_wiersz_dane = len(df) + 1
     ws_dane.freeze_panes = 'A2'
-    ws_dane.auto_filter.ref = f'A1:U{ostatni_wiersz_dane}'
+    ws_dane.auto_filter.ref = f'A1:AB{ostatni_wiersz_dane}'
     if ma_iae or ma_kara:
         for litera in ('P', 'Q', 'R', 'S'):
             skala = ColorScaleRule(start_type='min', start_color='63BE7B', mid_type='num', mid_value=0, mid_color='FFEB84',
@@ -328,6 +372,126 @@ def main():
         )
 
     autoszerokosc(ws_dane)
+
+    # ==========================================================================
+    # ZAKŁADKA "Procenty_vs_norma" (BENCHMARK_CRT, 2026-09-28, na życzenie
+    # użytkownika: wartości w tabeli PROCENTOWO) - te same wielkości co w "Dane",
+    # ale wszystkie jako % względem normy LET-1 (algorytm_z_normy) z TEJ SAMEJ
+    # lokalizacji: 0% = tak samo jak norma, ujemne = MNIEJ niż norma (lepiej dla
+    # energii/kar), dodatnie = więcej. Wartości liczone (nie formuły) z kolumn pct_*.
+    # ==========================================================================
+    # ==========================================================================
+    # ZAKŁADKA "Moc_i_kary" (PIERWSZA w skoroszycie; BENCHMARK_CRT, 2026-09-28, na
+    # życzenie użytkownika): kolejność kolumn = średnia moc użyta, średnia kara
+    # SUMA, średnia kara HRT, średnia kara CRT (kara suma = HRT + CRT). Uśrednione
+    # po wszystkich lokalizacjach/przebiegach danego algorytmu; niżej ta sama
+    # czwórka dla każdej lokalizacji z osobna. Data i godzina generacji w nagłówku.
+    # ==========================================================================
+    ws_mk = wb.create_sheet('Moc_i_kary', 0)
+    ws_mk.cell(row=1, column=1, value=(
+        f'Plik wygenerowany: {CZAS_GENERACJI_TEKST}  |  źródło: {SCIEZKA_CSV}  |  '
+        'Kara suma = kara HRT (śnieg + HRT: floor -10°C, marznący deszcz) + kara CRT (floor -10°C i '
+        'marznący deszcz liczone na CRT). Jednostka kar: °C·s. Średnia po lokalizacjach.'
+    ))
+    ws_mk.cell(row=1, column=1).font = Font(name=FONT_NAZWA, italic=True, size=9, color='555555')
+    ws_mk.merge_cells(start_row=1, start_column=1, end_row=1, end_column=8)
+    kolumny_mk = [('srednia_moc_pct', 'Średnia moc użyta (%)'),
+                  ('kara_bezpieczenstwa', 'Średnia kara - suma (°C·s)'),
+                  ('kara_bezpieczenstwa_hrt', 'Średnia kara HRT (°C·s)'),
+                  ('kara_bezpieczenstwa_crt', 'Średnia kara CRT (°C·s)')]
+    kolumny_mk = [(k, e) for k, e in kolumny_mk if k in df.columns]
+    naglowki_mk = ['Algorytm'] + [e for _, e in kolumny_mk] + [
+        'Kara suma % vs norma', 'Kara HRT % vs norma', 'Kara CRT % vs norma']
+    ustaw_naglowek(ws_mk, 2, naglowki_mk)
+    algorytmy_mk = [a for a in NAZWY_ALGORYTMOW.values() if a in set(df['Algorytm'].dropna())]
+
+    def _wpisz_wiersz_mk(ws, wiersz, etykieta, podzbior):
+        ws.cell(row=wiersz, column=1, value=etykieta).font = FONT_POGRUBIONY
+        for j, (kol, _) in enumerate(kolumny_mk, start=2):
+            srednia = pd.to_numeric(podzbior[kol], errors='coerce').mean()
+            komorka = ws.cell(row=wiersz, column=j, value=round(float(srednia), 2) if pd.notna(srednia) else None)
+            komorka.font = FONT_ZWYKLY
+            komorka.border = OBRAMOWANIE_CIENKIE
+            komorka.number_format = '0.0' if j == 2 else '#,##0'
+        for j, kol in enumerate(('pct_kara', 'pct_kara_hrt', 'pct_kara_crt'), start=2 + len(kolumny_mk)):
+            srednia = pd.to_numeric(podzbior[kol], errors='coerce').mean() if kol in podzbior.columns else float('nan')
+            komorka = ws.cell(row=wiersz, column=j, value=round(float(srednia), 1) if pd.notna(srednia) else None)
+            komorka.font = FONT_ZWYKLY
+            komorka.border = OBRAMOWANIE_CIENKIE
+            komorka.number_format = '+0.0"%";-0.0"%";0.0"%"'
+
+    for i, alg in enumerate(algorytmy_mk, start=3):
+        _wpisz_wiersz_mk(ws_mk, i, alg, df[df['Algorytm'] == alg])
+    for j in range(3, 3 + len(kolumny_mk) - 1):
+        litera = get_column_letter(j)
+        ws_mk.conditional_formatting.add(
+            f'{litera}3:{litera}{2 + len(algorytmy_mk)}',
+            ColorScaleRule(start_type='min', start_color='63BE7B', end_type='max', end_color='F8696B'))
+
+    wiersz_mk = 4 + len(algorytmy_mk)
+    ws_mk.cell(row=wiersz_mk, column=1, value='To samo per lokalizacja').font = FONT_POGRUBIONY
+    ustaw_naglowek(ws_mk, wiersz_mk + 1, ['Lokalizacja / algorytm'] + naglowki_mk[1:])
+    wiersz_mk += 2
+    for lok in sorted(df['Lokalizacja'].unique()):
+        for alg in algorytmy_mk:
+            podzbior = df[(df['Lokalizacja'] == lok) & (df['Algorytm'] == alg)]
+            if podzbior.empty:
+                continue
+            _wpisz_wiersz_mk(ws_mk, wiersz_mk, f'{lok} - {alg}', podzbior)
+            wiersz_mk += 1
+    ws_mk.freeze_panes = 'B3'
+    autoszerokosc(ws_mk, max_szer=48)
+
+    ws_pct = wb.create_sheet('Procenty_vs_norma')
+    ws_pct.cell(row=1, column=1, value=(
+        'Wszystkie wartości w % względem algorytmu z normy LET-1 (algorytm_z_normy) z TEJ SAMEJ lokalizacji: '
+        '0% = jak norma, ujemne = mniej niż norma (energia/kary - lepiej), dodatnie = więcej. Wartość w tabeli '
+        'zbiorczej = średnia z procentów po lokalizacjach. "Kara CRT" = składowa kary bezpieczeństwa liczona '
+        'na CRT (floor -10°C i marznący deszcz przy CRT<2°C). Puste = norma miała 0 (dzielenie przez zero).'
+    ))
+    ws_pct.cell(row=1, column=1).font = Font(name=FONT_NAZWA, italic=True, size=9, color='555555')
+    ws_pct.merge_cells(start_row=1, start_column=1, end_row=1, end_column=8)
+
+    kolumny_pct = [('pct_energia', 'Energia'), ('pct_przelaczenia', 'Przełączenia'), ('pct_iae', 'IAE'),
+                   ('pct_ise', 'ISE'), ('pct_itae', 'ITAE'), ('pct_kara', 'Kara bezp. (całkowita)'),
+                   ('pct_kara_crt', 'Kara bezp. (CRT)')]
+    ustaw_naglowek(ws_pct, 2, ['Algorytm'] + [f'{e} % vs norma' for _, e in kolumny_pct])
+    algorytmy_obecne = [a for a in NAZWY_ALGORYTMOW.values() if a in set(df['Algorytm'].dropna())]
+    for i, alg in enumerate(algorytmy_obecne, start=3):
+        ws_pct.cell(row=i, column=1, value=alg).font = FONT_POGRUBIONY
+        for j, (kol, _) in enumerate(kolumny_pct, start=2):
+            seria = pd.to_numeric(df.loc[df['Algorytm'] == alg, kol], errors='coerce')
+            srednia = seria.mean()
+            komorka = ws_pct.cell(row=i, column=j, value=round(float(srednia), 1) if pd.notna(srednia) else None)
+            komorka.font = FONT_ZWYKLY
+            komorka.border = OBRAMOWANIE_CIENKIE
+            komorka.number_format = '+0.0"%";-0.0"%";0.0"%"'
+    for j in range(2, 2 + len(kolumny_pct)):
+        litera = get_column_letter(j)
+        ws_pct.conditional_formatting.add(
+            f'{litera}3:{litera}{2 + len(algorytmy_obecne)}',
+            ColorScaleRule(start_type='min', start_color='63BE7B', mid_type='num', mid_value=0,
+                           mid_color='FFEB84', end_type='max', end_color='F8696B'))
+
+    # Macierze per lokalizacja: energia % i kara % (algorytm w kolumnach).
+    wiersz_start = 4 + len(algorytmy_obecne)
+    for tytul, kol in (('Energia % vs norma - per lokalizacja', 'pct_energia'),
+                       ('Kara bezpieczeństwa % vs norma - per lokalizacja', 'pct_kara')):
+        ws_pct.cell(row=wiersz_start, column=1, value=tytul).font = FONT_POGRUBIONY
+        ustaw_naglowek(ws_pct, wiersz_start + 1, ['Lokalizacja'] + algorytmy_obecne)
+        piwot = (df.assign(**{kol: pd.to_numeric(df[kol], errors='coerce')})
+                   .pivot_table(index='Lokalizacja', columns='Algorytm', values=kol, aggfunc='mean'))
+        for i, lok in enumerate(sorted(piwot.index), start=wiersz_start + 2):
+            ws_pct.cell(row=i, column=1, value=lok).font = FONT_POGRUBIONY
+            for j, alg in enumerate(algorytmy_obecne, start=2):
+                v = piwot.loc[lok, alg] if alg in piwot.columns else None
+                komorka = ws_pct.cell(row=i, column=j, value=round(float(v), 1) if (v is not None and pd.notna(v)) else None)
+                komorka.font = FONT_ZWYKLY
+                komorka.border = OBRAMOWANIE_CIENKIE
+                komorka.number_format = '+0.0"%";-0.0"%";0.0"%"'
+        wiersz_start += len(piwot.index) + 4
+    ws_pct.freeze_panes = 'B3'
+    autoszerokosc(ws_pct, max_szer=30)
 
     # ==========================================================================
     # ZAKŁADKA "Podsumowanie_algorytmy"
@@ -974,7 +1138,9 @@ def main():
         komorka.font = FONT_POGRUBIONY if (linia.isupper() or re.match(r'^\d\)', linia)) else FONT_ZWYKLY
         komorka.alignment = Alignment(wrap_text=True, vertical='top')
 
+    wb.properties.title = f'Podsumowanie wyników - wygenerowano {CZAS_GENERACJI_TEKST}'
     wb.save(SCIEZKA_XLSX)
+    wb.save(SCIEZKA_XLSX_STALA)
     print(f'Zapisano: {SCIEZKA_XLSX}')
     return df, agregaty, anomalie
 

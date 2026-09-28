@@ -64,6 +64,20 @@ MPC_WAGA_ZMIANY_MOCY = 0.02      # w3: kara za skok mocy między kolejnymi bloka
 # człony kosztu przy typowych deficytach rzędu kilku °C), NIE wynik strojenia -
 # dobry kandydat do (planowanego, patrz AGENTS.md) grid searchu z Części 2.
 
+# BENCHMARK_CRT (2026-09-28, na życzenie użytkownika - "MPC: dwie zmiany"):
+# 1) DUŻA kara za przewidywane HRT > 45°C (zabezpieczenie termiczne realnego
+#    urządzenia by zadziałało, patrz symulacja_fizyczna.HRT_LIMIT_OSTRZEGAWCZY_C -
+#    wartość zduplikowana tu, moduły Algorytmy/ nie importują symulacja_fizyczna).
+#    Kwadrat nadwyżki x waga 1000 (vs 20 dla deficytu bezpieczeństwa): 1°C nad
+#    limitem kosztuje więcej niż pełna moc przez blok (0,01*100^2=100), więc
+#    solver praktycznie nigdy nie planuje przekroczenia. Liczona w _koszt_mpc
+#    (wspólnie dla wszystkich wariantów MPC, niezależnie od kształtu kary z hooka).
+# 2) "Reszta nie na CRT": pozostałe człony kosztu (deficyt przewidywanej HRT
+#    względem celu) liczone są względem celu z kolumny HRT normy LET-1, a NIE
+#    CRT - patrz _MPCMachineryMixin.__init__ (progi HRT zamiast progów CRT).
+MPC_HRT_LIMIT_C = 45.0
+MPC_WAGA_ZABEZP_45C = 1000.0
+
 MPC_FALLBACK_KC_PERCENT_NA_C = 3.0  # Prosty regulator P (°C -> %) używany, dopóki autotest się nie powiódł/nie zbudował modelu blokowego.
 MPC_MAX_ITER_SOLVER = 60            # Limit iteracji L-BFGS-B na jedno przeplanowanie (koszt vs. dokładność).
 MPC_HISTORIA_U_MAX_BLOKOW = 64      # Zapas ponad typowe opóźnienie L w blokach (L~1200s / 900s ~ 1-2 bloki).
@@ -99,6 +113,17 @@ class _MPCMachineryMixin:
 
     def __init__(self):
         super().__init__()
+        # BENCHMARK_CRT (2026-09-28): MPC przewiduje i optymalizuje HRT (model
+        # moc->HRT z autotestu), więc jego cel liczymy z kolumny HRT normy LET-1
+        # (Tab.5/6: załączenie przy opadach +4°C, bez opadów +1°C, wyłączenie
+        # przy opadach +7°C) i oryginalną karę za śnieg (0,05°C/mm, max 6°C) -
+        # NIE z progów CRT (2/-5/3°C), którymi karmiona jest reszta rodziny.
+        # Nadpisuje atrybuty instancji z KontrolerRyzykaBazowy.__init__.
+        self.hrt_on_precip = 4.0
+        self.hrt_on_dry = 1.0
+        self.risk_freezing_rain_target_c = 7.0
+        self.risk_snow_penalty_per_mm_c = 0.05
+        self.risk_snow_penalty_max_c = 6.0
         self._mpc_model_zbudowany = False
         self._mpc_model_A = None
         self._mpc_model_B = None
@@ -176,12 +201,15 @@ class _MPCMachineryMixin:
         y_blocks = self._przewiduj_trajektorie(u_blocks_pct / 100.0)
         hrt_pred = crt_forecast + y_blocks
         kara_bezpieczenstwa = self._kara_bezpieczenstwa_mpc(hrt_pred, target_temperature)
+        nadwyzka_45 = np.maximum(hrt_pred - MPC_HRT_LIMIT_C, 0.0)
+        kara_zabezp_45 = MPC_WAGA_ZABEZP_45C * float(np.sum(nadwyzka_45 ** 2))
         poprzednie = np.concatenate(([ostatnia_moc_pct], u_blocks_pct))
         delta_u = np.diff(poprzednie)
 
         return float(
             MPC_WAGA_ENERGIA * np.sum(u_blocks_pct ** 2)
             + kara_bezpieczenstwa
+            + kara_zabezp_45
             + MPC_WAGA_ZMIANY_MOCY * np.sum(delta_u ** 2)
         )
 

@@ -288,11 +288,18 @@ def main():
     df_wszystkie.to_csv(sciezka_zbiorczy, index=False)
 
     try:
+        # Zmienna MUSI być ustawiona PRZED importem - generator czyta ją w momencie importu
+        # (wcześniej kolejność była odwrotna, przez co szukał CSV w domyślnym, złym folderze).
+        os.environ['SZYNA_FOLDER_WYNIKOW'] = FOLDER_WYNIKOW
+        os.environ['SZYNA_FOLDER_CSV_SZCZEGOLOWE'] = FOLDER_CSV_SZCZEGOLOWE
         import generuj_excel_podsumowanie
-        os.environ['SZYNA_FOLDER_WYNIKOW'] = FOLDER_WYNIKOW  # generuj_excel_podsumowanie czyta stąd
         generuj_excel_podsumowanie.main()
-        sciezka_excel_oryginalny = os.path.join(FOLDER_WYNIKOW, "Podsumowanie_wynikow.xlsx")
-        sciezka_excel_finalny = os.path.join(FOLDER_WYNIKOW, NAZWA_EXCEL_FINALNY)
+        # Generator zapisuje plik ze znacznikiem daty i godziny w nazwie (patrz
+        # generuj_excel_podsumowanie.ZNACZNIK_CZASU) - kopia finalna dostaje ten sam znacznik.
+        sciezka_excel_oryginalny = generuj_excel_podsumowanie.SCIEZKA_XLSX
+        sciezka_excel_finalny = os.path.join(
+            FOLDER_WYNIKOW, NAZWA_EXCEL_FINALNY.replace(
+                '.xlsx', f'_{generuj_excel_podsumowanie.ZNACZNIK_CZASU}.xlsx'))
         if os.path.exists(sciezka_excel_oryginalny):
             shutil.copyfile(sciezka_excel_oryginalny, sciezka_excel_finalny)
             print(f"\nSkopiowano Excel do: {sciezka_excel_finalny}")
