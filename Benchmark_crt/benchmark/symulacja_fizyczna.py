@@ -43,6 +43,24 @@
 #      transmitancji (moc -> ΔCRT), ZAŁOŻONY (nie zidentyfikowany - patrz
 #      uzasadnienie przy stałych).
 #
+#   5) NASŁONECZNIENIE (2026-09-28, na życzenie użytkownika - "dodaj słońce do
+#      całości obiektu"): trzeci składnik temperatury OBU szyn, oprócz pogody
+#      (powietrza) i grzania:
+#          HRT = G_W(AT) + G_S,HRT(słońce) + G_H(moc)
+#          CRT = G_W(AT) + G_S,CRT(słońce) + G_HC(moc)
+#      Wejście słońca = ułamek_słońca * sin(wysokość słońca) - patrz wejscie_slonca.py
+#      (współrzędne każdej lokalizacji, średnia godzinowa interpolowana liniowo).
+#      Parametry G_W, G_S i G_H PRZELICZONE RAZEM na realnych danych z Wrocławia
+#      (Identyfikacja/Identyfikacja/dopasowanie_nasloneczenia.py): stary G_W (K=1,217)
+#      wchłonął średnie nagrzewanie słoneczne słonecznej wiosny, więc samo dołożenie
+#      słońca do niego nic nie dawało - trzeba było przeliczyć G_W (K spadło do ~0,99).
+#      Efekt na danych z Wrocławia (21 dni): RMSE CRT 2,23 -> 1,22 °C, HRT 2,72 -> 1,15 °C.
+#      ZIMĄ wkład słońca jest dodatkowo TŁUMIONY (WSPOLCZYNNIK_SLONCA_ZIMA, domyślnie 0.5 - założenie po ostrożnej stronie: śnieg odbija
+#      promieniowanie, a dopasowanie jest z wiosny bez śniegu).
+#      UWAGA: zmienia to fizykę WSZYSTKICH przebiegów (wyniki sprzed tej zmiany nie są
+#      porównywalne); kontroler NIE widzi słońca (urządzenie go nie mierzy) - odczuwa je
+#      tylko przez zmierzone CRT/HRT. Dane z jednej wiosny (bez zimy), słońce z reanalizy.
+#
 # Reszta (model śniegu SnowClim, kara bezpieczeństwa, IAE/ISE/ITAE,
 # bezpiecznik parytetu, zapis wyników) jest, na razie, IDENTYCZNA jak w
 # oryginale.
@@ -66,6 +84,7 @@ sys.path.insert(0, os.path.join(BASE_DIR, 'Algorytmy'))
 sys.path.insert(0, os.path.join(BASE_DIR, 'Model_sniegu_SnowClim'))
 
 from snowclim_physical_model import SnowClimPhysicalModel  # noqa: E402
+import wejscie_slonca  # noqa: E402  (wejście nasłonecznienia: współrzędne lokalizacji + geometria słońca)
 # Progi bezpieczeństwa normy LET-1 - używane WYŁĄCZNIE do liczenia
 # 'kara_bezpieczenstwa'/'epizody_ponizej_floor' (patrz niżej w uruchom_kontroler
 # i notatki/kara_bezpieczenstwa.md) - reeksport z funkcja_ryzyka_wspolne.py,
@@ -98,14 +117,29 @@ HRT_ZABEZP_HISTEREZA_C = 5.0
 # --- PARAMETRY MODELU OBIEKTU (z realnych danych Wrocław Popowice, 2026-09-25 -
 # patrz Identyfikacja/notatki_identyfikacja/wyniki.md, sekcje "Model AT -> CRT"
 # i "Ranking modeli" kanału PWR) - ZASTĘPUJE dotychczasowe main_test.py. ---
-# Pogoda: AT -> CRT, FO_Z (pierwszy rząd + zero) - ta sama FORMA co wcześniej.
-K_W = 1.217; T1_W = 2482.3; TZ_W = 690.8
+# Pogoda: AT -> szyna, FO_Z (pierwszy rząd + zero) - ta sama FORMA co wcześniej.
+# 2026-09-28: PRZELICZONE razem ze słońcem (patrz punkt 5 nagłówka). Poprzednie
+# wartości (bez słońca, dopasowane tylko do CRT): K_W=1.217, T1_W=2482.3, TZ_W=690.8.
+K_W = 0.9866; T1_W = 5145.5; TZ_W = 1321.4
+# Słońce: wejście (ułamek*sin wysokości, 0..1) -> ΔT szyny, pierwszy rząd K/(T1 s+1);
+# K = ΔT przy słońcu w zenicie i czystym niebie. Osobno dla HRT i CRT (HRT: bardzo
+# wolna stała ~10 h, słabo zidentyfikowana - dane z jednej wiosny).
+K_S_CRT = 12.773; T1_S_CRT = 5650.6
+K_S_HRT = 9.629; T1_S_HRT = 35062.2
+# ZIMOWE TŁUMIENIE słońca (2026-09-28, na życzenie użytkownika: zimą przyjąć niedoszacowanie wkładu słońca, "żeby błąd był na minus"): parametry G_S
+# pochodzą z wiosennych danych (bez śniegu), a zimą śnieg odbija większość promieniowania (albedo) - model nie ma albedo, więc wkład słońca w
+# symulacji jest mnożony przez ten współczynnik. Wszystkie pliki pogodowe są oknami zimowymi (XI-III / V-IX na południu), więc stosowany zawsze.
+# WARTOŚĆ 0.5 to ZAŁOŻENIE (nie pomiar) - świadomie po ostrożnej stronie (szyny chłodniejsze niż przy pełnym słońcu). 1.0 = bez tłumienia
+# (tak jak w dopasowaniu). Nadpisywalne: SZYNA_SLONCE_WSPOLCZYNNIK_ZIMA.
+WSPOLCZYNNIK_SLONCA_ZIMA = float(os.environ.get('SZYNA_SLONCE_WSPOLCZYNNIK_ZIMA', '0.5'))
 # Grzanie: moc -> ΔHRT, FOLP_Z (pierwszy rząd + zero, BEZ opóźnienia - L*=0
 # potwierdzone iteracyjnie, patrz nagłówek pliku). T2_H NIE ISTNIEJE w tym
 # modelu (nowy model jest pierwszego rzędu) - zostaje tu jako 0.0 WYŁĄCZNIE,
 # żeby przygotuj_modele_stanowe() niżej mogło zachować ten sam sygnaturę
 # (k_h_pct/t1_h_pct/t2_h_pct/l_h_pct) co w symulacja_fizyczna.py.
-K_H = 48.07; T1_H = 1901.2; TZ_H = 90.36; T2_H = 0.0; L_H = 0.0
+# 2026-09-28: G_H dopasowane PONOWNIE w oknach testu skokowego po uwzględnieniu słońca
+# (test przypadł na słoneczny poranek). Poprzednio: K_H=48.07, T1_H=1901.2, TZ_H=90.36.
+K_H = 47.17; T1_H = 2462.4; TZ_H = 203.9; T2_H = 0.0; L_H = 0.0
 
 # BENCHMARK_CRT (2026-09-28, POPRAWKA na życzenie użytkownika): CRT NIE jest
 # całkowicie odcięte od grzania - to duży obiekt o dużej bezwładności, więc
@@ -136,6 +170,8 @@ TF_HEATING = signal.TransferFunction([K_H * TZ_H, K_H], [T1_H, 1])
 # scipy.signal.normalize ostrzega o "badly conditioned filter coefficients"
 # przy wiodącym zerze w liczniku (nieszkodliwe, ale niepotrzebny szum w logach).
 TF_CRT_HEATING = signal.TransferFunction([K_H_CRT], [T1_H_CRT, 1])
+TF_SUN_HRT = signal.TransferFunction([K_S_HRT], [T1_S_HRT, 1])
+TF_SUN_CRT = signal.TransferFunction([K_S_CRT], [T1_S_CRT, 1])
 
 
 # SnowClimPhysicalModel.update() oczekuje "sekund słońca w oknie 900s" jako wewnętrznej,
@@ -256,6 +292,22 @@ def wczytaj_pogode_1s(sciezka_csv, max_dni=None, zakres_dat=None, dt=1.0):
             * (REFERENCYJNY_KROK_NASLONECZNIENIA_S / krok_zrodlowy_s)
         )
 
+    # WEJŚCIE SŁOŃCA dla cieplnego kanału słonecznego (punkt 5 nagłówka): osobne kolumny, kolumna
+    # 'naslonecznienie_sekundy' (skala 900 s dla modelu śniegu) zostaje bez zmian. Bez współrzędnych
+    # lokalizacji (plik spoza wejscie_slonca.LOKALIZACJE) albo bez kolumny słońca: wejście = 0.
+    wsp = wejscie_slonca.wspolrzedne(sciezka_csv)
+    if wsp is not None and 'naslonecznienie_sekundy' in df_zrodlo.columns:
+        lat, lon, strefa = wsp
+        frakcja, _, wejscie = wejscie_slonca.wejscie_slonca(
+            wejscie_slonca.na_utc(df_zrodlo.index, strefa), df_zrodlo['naslonecznienie_sekundy'].to_numpy(),
+            krok_zrodlowy_s, wejscie_slonca.na_utc(df_1s.index, strefa), lat, lon)
+        df_1s['slonce_frakcja'] = frakcja
+        df_1s['slonce_wejscie'] = wejscie
+    else:
+        print("UWAGA: brak współrzędnych lokalizacji albo kolumny nasłonecznienia - kanał słoneczny wyłączony (wejście = 0).")
+        df_1s['slonce_frakcja'] = 0.0
+        df_1s['slonce_wejscie'] = 0.0
+
     df_1s.reset_index(inplace=True)
     print(f"Zagęszczono bazę. Liczba próbek 1-sekundowych: {len(df_1s)}\n")
     return df_1s
@@ -293,6 +345,17 @@ def wylicz_skladowa_pogodowa(at_array, A_wd, B_wd, C_wd, D_wd, dt=1.0):
     """CRT (składowa czysto pogodowa, niezależna od grzania) dla całej serii AT naraz."""
     _, hrt_weather_all, _ = signal.dlsim((A_wd, B_wd, C_wd, D_wd, dt), at_array)
     return hrt_weather_all.flatten()
+
+
+def wylicz_skladowe_slonca(wejscie_slonca_array, dt=1.0):
+    """Składowe słoneczne (ΔHRT, ΔCRT) dla całej serii wejścia słońca naraz (0..1, patrz wejscie_slonca.py):
+    dwa niezależne filtry pierwszego rzędu, tą samą metodą co składowa pogodowa (tf2ss + zoh + dlsim)."""
+    wynik = []
+    for tf in (TF_SUN_HRT, TF_SUN_CRT):
+        A, B, C, D, _ = signal.cont2discrete(signal.tf2ss(tf.num, tf.den), dt, method='zoh')
+        _, y, _ = signal.dlsim((A, B, C, D, dt), np.asarray(wejscie_slonca_array, dtype=float))
+        wynik.append(y.flatten())
+    return wynik[0], wynik[1]
 
 
 def _get_power(controller, row, method_name):
@@ -385,6 +448,13 @@ def uruchom_kontroler(name, controller, method_name, df_1s, hrt_weather_all,
     x_ch = np.zeros((A_chd.shape[0], 1))  # BENCHMARK_CRT (2026-09-28): stan kanału moc -> ΔCRT.
     current_hrt = 0.7
     crt_heating_comp = 0.0  # wkład grzania w CRT z POPRZEDNIEGO kroku - czytany przez czujnik CRT kontrolera (patrz row niżej).
+    # Składowe słoneczne (punkt 5 nagłówka) nie zależą od mocy ani od kontrolera - liczone z góry dla całej serii.
+    if 'slonce_wejscie' in df_1s.columns:
+        slonce_h_all, slonce_c_all = wylicz_skladowe_slonca(df_1s['slonce_wejscie'].to_numpy(), dt)
+        slonce_h_all = slonce_h_all * WSPOLCZYNNIK_SLONCA_ZIMA   # zimowe tłumienie (albedo śniegu) - patrz stała
+        slonce_c_all = slonce_c_all * WSPOLCZYNNIK_SLONCA_ZIMA
+    else:
+        slonce_h_all = slonce_c_all = np.zeros(len(df_1s))
     snow_depth_history = np.zeros(len(df_1s))
     power_history = np.zeros(len(df_1s))
 
@@ -503,7 +573,7 @@ def uruchom_kontroler(name, controller, method_name, df_1s, hrt_weather_all,
             # (pogoda + słaby/wolny wkład grzania z poprzedniego kroku, tak jak HRT niżej jest
             # z poprzedniego kroku), NIE samą składową pogodową - CRT jest głównym wyznacznikiem
             # i ma "mówić" kontrolerowi też, ile śniegu zostało (patrz _estymuj_grubosc_sniegu_mm).
-            'CRT_temp_niegrzana': hrt_weather_comp + crt_heating_comp,
+            'CRT_temp_niegrzana': hrt_weather_comp + slonce_c_all[index] + crt_heating_comp,
             'HRT_temp_grzana': current_hrt,
             'AT_temp_powietrza': at_temp,
             'RH_wilgotnosc_wzgledna': round(calculated_rh, 1),
@@ -561,8 +631,8 @@ def uruchom_kontroler(name, controller, method_name, df_1s, hrt_weather_all,
         x_ch = A_chd @ x_ch + B_chd * u_delayed
         crt_heating_comp = float((C_chd @ x_ch + D_chd * u_delayed)[0, 0])
 
-        current_hrt = hrt_weather_comp + hrt_heating_comp
-        current_crt = hrt_weather_comp + crt_heating_comp
+        current_hrt = hrt_weather_comp + slonce_h_all[index] + hrt_heating_comp
+        current_crt = hrt_weather_comp + slonce_c_all[index] + crt_heating_comp
 
         if diagnostics is not None:
             need_heat_flag = bool(diagnostics.get('need_heat'))

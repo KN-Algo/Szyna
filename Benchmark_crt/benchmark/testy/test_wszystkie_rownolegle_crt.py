@@ -109,7 +109,9 @@ ZAPISZ_CO_N_SEKUND = int(os.environ.get('SZYNA_ZAPISZ_CO_N_SEKUND', '600'))
 _watkow_env = os.environ.get('SZYNA_LICZBA_WATKOW')
 LICZBA_WATKOW_NADPISANIE = int(_watkow_env) if _watkow_env else None
 
-SCENARIUSZ_ETYKIETA = 'nominal_crt'  # stała etykieta w wynikach - odróżnia ten przebieg od starej fizyki
+# Stała etykieta w wynikach - odróżnia ten przebieg od starej fizyki. '_slonce' = fizyka z kanałem nasłonecznienia
+# (2026-09-28); wyniki oznaczone samym 'nominal_crt' pochodzą sprzed tej zmiany i NIE są porównywalne.
+SCENARIUSZ_ETYKIETA = 'nominal_crt_slonce'
 ZAPISZ_CSV_SZCZEGOLOWE = os.environ.get('SZYNA_ZAPISZ_CSV_SZCZEGOLOWE', '1') != '0'
 KROK_SYMULACJI_S = float(os.environ.get('SZYNA_KROK_S', '10.0'))
 WZNAWIAJ_PRZERWANE = os.environ.get('SZYNA_WZNOW', '1') != '0'
@@ -302,6 +304,7 @@ def przetworz_kombinacje(nazwa_lokalizacji, sciezka_csv, nazwa_algorytmu):
         stats = dict(stats)
         stats['lokalizacja'] = nazwa_lokalizacji
         stats['scenariusz'] = SCENARIUSZ_ETYKIETA
+        stats['wsp_slonca_zima'] = fiz.WSPOLCZYNNIK_SLONCA_ZIMA   # zimowe tłumienie słońca użyte w tym przebiegu (patrz symulacja_fizyczna.py)
         # Czas rdzenia zużyty na to zadanie (sekundy) - realny koszt CPU do planowania budżetu.
         stats['czas_zadania_s'] = round(time.time() - t_start_zadania, 1)
         df_zapis =fiz.przygotuj_do_zapisu(df_wynik, ZAPISZ_CO_N_SEKUND)

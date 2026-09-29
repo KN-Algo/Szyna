@@ -357,6 +357,23 @@ ALGORYTMY = {
         'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu',
         'pamiec_przyblizona_mb': 21.0,
     },
+    'fuzzy_ryzyko_2v2_strojony': {
+        'modul': 'funkcja_fuzzy_ryzyko_2v2_strojony',
+        'klasa': 'KontrolerFuzzyRyzyko2v2Strojony',
+        'metoda': 'fuzzy_ryzyko',
+        'opis': 'Jak fuzzy_ryzyko_2v2, ale 6 progów silnika FL2v2 są parametrami konstruktora (domyślnie takie same '
+                'liczby) - używane przez przeszukiwanie nastaw (testy/strojenie_fuzzy_2v2.py) - '
+                'funkcja_fuzzy_ryzyko_2v2_strojony.py. Bez nadpisania nastaw zachowuje się identycznie jak '
+                'fuzzy_ryzyko_2v2.',
+        'bezpiecznik': True,
+        'typ': 'Fuzzy logic (FL2v2, binarny, 7 reguł, strojony)',
+        'cel': 'Funkcja ryzyka (Kalman)',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) amortyzowane, skok co 300 kroków (Kalman + cyfrowy bliźniak 7200 kroków)',
+        'flops_na_krok': 500,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu',
+        'pamiec_przyblizona_mb': 21.0,
+    },
     'fuzzy_ryzyko_2v2_crt_progi': {
         'modul': 'funkcja_fuzzy_ryzyko_2v2_crt_progi',
         'klasa': 'KontrolerFuzzyRyzyko2v2CrtProgi',

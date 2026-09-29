@@ -174,14 +174,32 @@ class KontrolerRyzykaBazowy(KontrolerBazowy):
         odczyt opadu, punkt rosy i wiatr z bieżącej próbki (pola 'PUNKT_ROSY_C'/
         'WIATR_M_S' - patrz symulacja_fizyczna.uruchom_kontroler). Zwraca tablicę
         8 intensywności (0-3) na najbliższe 2h.
+
+        POPRAWKA BŁĘDU (2026-09-29, wykryty przy budowie wizualizacji prognozy opadu -
+        policzalnie: 0 aktywacji bramki na 43201 krokach 5-dniowego okna z realnym opadem,
+        mimo 6120 kroków z faktycznym opadem wg innego, poprawnie przeskalowanego progu w
+        TYM SAMYM pliku): `precip_total_mm` (parametr `precip_total_mm` tej metody, z
+        row_data['PRECIP_opad']+['SNOW_snieg']) jest w mm NA SEKUNDĘ (tak konstruuje go
+        symulacja_fizyczna.wczytaj_pogode_1s/uruchom_kontroler - dzieli sumę opadu przez
+        krok natywny danych), rzędu 0,0001-0,0005. Ale bramka "czy pada"
+        przewidywanie_opadow.predict_winter_precipitation (próg 0,02, WEWNĄTRZ tego modułu,
+        celowo NIETKNIĘTY - jego walidacja 80,1%/81,3% skuteczności jest liczona na surowych
+        mm z pliku, nie na mm/s) oczekuje mm w skali NATYWNEGO kroku danych (np. 0,4-0,5 mm/h) -
+        40-200x większej. Efekt bez tej poprawki: bramka NIGDY się nie otwierała w żadnym
+        realnym przebiegu - cała prognoza opadu (priorytet 2b w _evaluate_risk_setpoint,
+        "front ustępuje" w KontrolerRyzykaOpadBazowy niżej) była martwym kodem. Naprawa:
+        przeskalowanie do "mm w ostatnich STEP_SECONDS (15 min)" - ten sam rząd wielkości,
+        na jaki reaguje reszta modułu (i na jakim był walidowany), bez ingerencji w sam
+        przewidywanie_opadow.py.
         """
         future_at = self.temperature_prediction()
         if not future_at:
             return [0] * HORIZON_STEPS
         current_dp = float(row_data.get('PUNKT_ROSY_C', row_data['AT_temp_powietrza']))
         current_wind = float(row_data.get('WIATR_M_S', 3.0))
+        precip_ostatnie_15min_mm = precip_total_mm * STEP_SECONDS
         return self._opad_forecaster.predict_winter_precipitation(
-            [precip_total_mm], future_at, current_dp, current_wind,
+            [precip_ostatnie_15min_mm], future_at, current_dp, current_wind,
         )
 
     def _prognoza_nadchodzacego_frontu(self, row_data, precip_total_mm):

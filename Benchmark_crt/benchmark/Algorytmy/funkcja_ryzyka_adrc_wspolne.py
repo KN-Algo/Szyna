@@ -72,6 +72,31 @@ ADRC_NADRC_ALPHA_CTRL = 0.5
 ADRC_NADRC_DELTA_C = 0.5
 
 
+# ZABEZPIECZENIE (2026-09-28, wykryte i naprawione po tym, jak użytkownik zauważył "coś jest nie
+# tak" w LADRC): omega_c = 1/(2*L) EKSPLODUJE, gdy zidentyfikowane L jest bliskie zeru - zmierzone
+# na realnym przebiegu (Kraków): autotest po ucięciu skoku przy zabezpieczeniu 38°C zwrócił
+# T1=5.0 (dokładnie DOLNA granica solvera - patrz bounds_lower w rdzen_kontrolera._identify_sopdt),
+# L≈1.3e-27 (praktycznie zero z powodu zaokrągleń) - omega_c wyszło ≈3.8e26, co w praktyce zamienia
+# regulator w coś sterowanego szumem zaokrągleń (LADRC na tym przebiegu grzał średnio 1.3% mocy
+# mimo potrzeby grzania niemal cały czas, kara bezpieczeństwa 401564 wobec 0 dla risk_function_pid
+# na tych samych danych). UWAGA fizyczna: prawdziwe opóźnienie transportowe grzania w tym modelu
+# JEST z definicji zerowe (L_H=0.0 w symulacja_fizyczna.py, FOLP_Z bez opóźnienia) - więc żywa
+# identyfikacja L bliskiego zeru jest tu SPODZIEWANA, nie odosobnionym błędem, co oznacza, że ta
+# formuła (zapożyczona z konwencji SIMC, gdzie L>0 jest założeniem) strukturalnie nie pasuje do
+# tego konkretnego obiektu i może wybuchać nie tylko w rzadkich, zdegenerowanych dopasowaniach.
+# Naprawa (ten sam wzorzec co mpc_wspolne._MPCMachineryMixinZabezpieczony - odrzuć niewiarygodne
+# dopasowanie, zostań na bezpiecznych nastawach ADRC_FALLBACK_*, NIE na regulatorze bez sterowania):
+# wywołujący (risk_function_ladrc/nadrc) ma sprawdzać dopasowanie_adrc_wiarygodne() PRZED
+# wylicz_parametry_adrc(), zamiast tylko wynik['fit_ok'].
+ADRC_L_MIN_WIARYGODNE_S = 1.0  # poniżej tego L uznajemy identyfikację za zbyt bliską zeru dla omega_c=1/(2L)
+
+
+def dopasowanie_adrc_wiarygodne(wynik):
+    """True, gdy wynik autotestu nadaje się do wylicz_parametry_adrc() - poza fit_ok wymaga też
+    L >= ADRC_L_MIN_WIARYGODNE_S (patrz uzasadnienie wyżej). `wynik` to autotest_result (dict) albo None."""
+    return wynik is not None and wynik.get('fit_ok', False) and wynik.get('L', 0.0) >= ADRC_L_MIN_WIARYGODNE_S
+
+
 def wylicz_parametry_adrc(K, T1, T2, L):
     """
     Z (K, T1, T2, L) identyfikacji SOPDT wylicza (b0, omega_c, omega_o) -

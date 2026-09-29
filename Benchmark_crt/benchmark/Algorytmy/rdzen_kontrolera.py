@@ -52,9 +52,12 @@ TEMP_FORECAST_REFRESH_S = 300            # Odśwież prognozę Kalmana nie czę�
 # AT/CRT) - to prognoza (2h/8 kroków), nie sterowanie co sekundę, więc
 # gruboziarnista siatka w zupełności wystarcza.
 # ==========================================
-K_W_CRT = 1.217
-T1_W_CRT = 2482.3
-TZ_W_CRT = 690.8
+# 2026-09-28: przeliczone razem ze słońcem (jak K_W/T1_W/TZ_W w symulacja_fizyczna.py; poprzednio
+# 1.217 / 2482.3 / 690.8). Kontroler modeluje pogodę bez słońca (urządzenie go nie mierzy) - resztę
+# koryguje filtr Kalmana zmierzonym CRT.
+K_W_CRT = 0.9866
+T1_W_CRT = 5145.5
+TZ_W_CRT = 1321.4
 
 # BENCHMARK_CRT (2026-09-28, POPRAWKA na życzenie użytkownika): cyfrowy
 # bliźniak GRZANIA -> CRT - słaby i wolny (nie zerowy, jak zakładała
@@ -65,7 +68,7 @@ TZ_W_CRT = 690.8
 # identyfikuje NIEZNANY sprzęt online) ten kanał nie jest identyfikowalny w
 # rozsądnym czasie (zbyt słaby/wolny), więc używany jest wprost, jako stała,
 # tak jak bliźniak pogodowy K_W_CRT powyżej - patrz _zbuduj_bliznika_grzania_crt.
-K_H_CRT_KONTROLER = 4.807      # = 48.07 (K_H w symulacja_fizyczna.py) * 0.10
+K_H_CRT_KONTROLER = 4.717      # = 47.17 (K_H w symulacja_fizyczna.py) * 0.10
 T1_H_CRT_KONTROLER = 14400.0   # 4h
 
 # Kowariancje filtru Kalmana (predykcja+korekta, patrz crt_transmittance_prediction

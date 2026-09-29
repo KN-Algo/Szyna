@@ -95,8 +95,11 @@ class KontrolerNaukaKaryPIDRyzyko(KontrolerNaukaKaryBazowy):
         if forecast_at:
             current_dp = float(row_data.get('PUNKT_ROSY_C', row_data['AT_temp_powietrza']))
             current_wind = float(row_data.get('WIATR_M_S', 3.0))
+            # x STEP_SECONDS: patrz uzasadnienie w funkcja_ryzyka_wspolne._prognoza_intensywnosci_opadu
+            # (2026-09-29) - precip_total_mm jest mm/s, przewidywanie_opadow oczekuje mm/krok natywny.
+            # Lokalne progi 0.0001 niżej zostają na oryginalnym (nieskalowanym) precip_total_mm.
             prognoza_opad = self._opad_forecaster.predict_winter_precipitation(
-                [precip_total_mm], forecast_at, current_dp, current_wind)
+                [precip_total_mm * STEP_SECONDS], forecast_at, current_dp, current_wind)
             self._dodaj_flopy(160)
             near_term = [int(v) for v in prognoza_opad[:PROGNOZA_BLISKI_TERMIN_KROKOW]]
             if precip_total_mm <= 0.0001 and any(v > 0 for v in near_term):

@@ -19,6 +19,7 @@ if _BASE_DIR not in sys.path:
 
 from funkcja_nauka_kary_wspolna import KontrolerNaukaKaryBazowy
 from przewidywanie_opadow import przewidywanie_opadow as PrzewidywanieOpadow
+from rdzen_kontrolera import STEP_SECONDS
 
 PID_KC_PERCENT = 2.9262
 PID_TI_S = 3571.88
@@ -52,8 +53,13 @@ class KontrolerNaukaKaryPIDOpad(KontrolerNaukaKaryBazowy):
         if forecast_at:
             current_dp = float(row_data.get('PUNKT_ROSY_C', row_data['AT_temp_powietrza']))
             current_wind = float(row_data.get('WIATR_M_S', 3.0))
+            # x STEP_SECONDS: precip_total_mm jest w mm/s (skala symulatora), przewidywanie_opadow
+            # oczekuje mm w skali natywnego kroku danych - patrz poprawka i pełne uzasadnienie w
+            # funkcja_ryzyka_wspolne._prognoza_intensywnosci_opadu (2026-09-29). Lokalne progi 0.0001
+            # niżej (front_nadchodzi/front_konczy_sie) ZOSTAJĄ na oryginalnym precip_total_mm - są już
+            # poprawnie skalowane dla mm/s.
             prognoza = self._opad_forecaster.predict_winter_precipitation(
-                [precip_total_mm], forecast_at, current_dp, current_wind)
+                [precip_total_mm * STEP_SECONDS], forecast_at, current_dp, current_wind)
             self._dodaj_flopy(160)
             near_term = [int(v) for v in prognoza[:PROGNOZA_BLISKI_TERMIN_KROKOW]]
             front_nadchodzi = precip_total_mm <= 0.0001 and any(v > 0 for v in near_term)

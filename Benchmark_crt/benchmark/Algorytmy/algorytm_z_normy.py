@@ -54,14 +54,21 @@ class AutomatPogodowyNorma:
         self.row_data = RowDataNorma()
         self._flops_licznik = 0  # Licznik RZECZYWISTYCH FLOPs - patrz rdzen_kontrolera.KontrolerBazowy._dodaj_flopy.
 
-        # --- LIMIT PRZEŁĄCZEŃ ---
-        # Norma nie opisuje limitu dobowego przełączeń - dodany tu wyłącznie
-        # dla uczciwego porównania w symulacji 1-sekundowej (żeby wszystkie
-        # porównywane algorytmy miały tę samą osłonę przed "pstrykaniem" na
-        # granicy progu, a różnice w wynikach odzwierciedlały logikę pogodową,
-        # nie artefakty próbkowania).
-        self.current_date = None
-        self.switch_count_today = 0
+        # --- LIMIT PRZEŁĄCZEŃ: ZDJĘTY CAŁKOWICIE (2026-09-29, na wyraźne życzenie użytkownika,
+        # po zdiagnozowaniu, że norma "rzadko się włącza"). WCZEŚNIEJSZY STAN: był tu dobowy limit
+        # (nieobecny w samej normie - dodany wyłącznie dla uczciwego porównania z innymi
+        # algorytmami), ale w zestawieniu z fizyką grzania (natychmiastowy skok HRT ~3,9°C po
+        # włączeniu, WIĘKSZY niż pasmo histerezy normy 2-3°C) prowadził do: włącz -> skok HRT ponad
+        # próg wyłączenia -> wyłącz w kolejnym kroku -> powtórka co ~10-40s. Limit wyczerpywał się
+        # natychmiast przy pierwszym mrozie i ZAMRAŻAŁ automat w stanie, w którym akurat był
+        # (najczęściej wyłączonym) - stąd "rzadko się włącza". UWAGA po zdjęciu limitu: przyczyna
+        # źródłowa (za wąska histereza względem skoku grzania) NADAL ISTNIEJE - bez limitu automat
+        # faktycznie przełącza się tak często, jak każe mu ten skok (zmierzone bez limitu: do ~2200
+        # przełączeń/dobę w Krakowie, ~6800/dobę w Kirunie - fizycznie nierealne dla stycznika, ale
+        # to WIERNE odwzorowanie norm LET-1 zaimplementowanych dosłownie, bez żadnej dodatkowej
+        # ochrony przed pstrykaniem, której norma nie przewiduje). `max_switches_per_day` zostaje w
+        # sygnaturze WYŁĄCZNIE dla spójności interfejsu z rejestr_algorytmow.stworz_kontroler (jak w
+        # regulatorach ciągłych, np. funkcja_ryzyka_pid.py) - nieużywane.
         self.max_switches_per_day = max_switches_per_day
 
         # --- TABELA NR 5: progi przy opadach (dwa czujniki) ---
@@ -88,22 +95,15 @@ class AutomatPogodowyNorma:
         self.row_data.rh_humidity = float(row_data.get('RH_wilgotnosc_wzgledna', 0.0))
         self.row_data.pressure = float(row_data.get('PRES_cisnienie', 0.0))
 
-        # 1. Reset licznika przełączeń z nastaniem nowego dnia.
-        active_date = self.row_data.timestamp.date()
-        if self.current_date != active_date:
-            self.current_date = active_date
-            self.switch_count_today = 0
-
-        # 2. Wykrycie opadu (czujnik wilgoci / śniegu nawiewanego - tu: PRECIP_opad/SNOW_snieg > 0),
+        # 1. Wykrycie opadu (czujnik wilgoci / śniegu nawiewanego - tu: PRECIP_opad/SNOW_snieg > 0),
         #    ograniczone do temperatur, w których w naszym klimacie w ogóle występuje opad śniegu
         #    (pkt 2.4.18.3).
         opad_wykryty = (self.row_data.precip > 0.0 or self.row_data.snow > 0.0) \
             and self.row_data.at_temp <= self.at_threshold_precip
 
-        previous_state = self.heating_on
         target_state = self.heating_on
 
-        # 3. LOGIKA DECYZYJNA AUTOMATU POGODOWEGO (pkt 2.4.13 - 2.4.16, wariant dwa czujniki).
+        # 2. LOGIKA DECYZYJNA AUTOMATU POGODOWEGO (pkt 2.4.13 - 2.4.16, wariant dwa czujniki).
         if opad_wykryty:
             if not self.heating_on:
                 # Pkt 2.4.13.3: obie temperatury muszą być poniżej progów załączenia.
@@ -123,12 +123,8 @@ class AutomatPogodowyNorma:
                 if self.row_data.crt_temp > self.crt_off_dry or self.row_data.hrt_temp > self.hrt_off_dry:
                     target_state = False
 
-        # 4. Limit dobowy przełączeń (patrz komentarz w __init__).
-        if target_state != previous_state:
-            if self.switch_count_today < self.max_switches_per_day:
-                self.heating_on = target_state
-                self.switch_count_today += 1
-            # W przeciwnym razie limit wyczerpany - zostajemy przy poprzednim stanie.
+        # 3. Wyjście natychmiast wykonuje decyzję - BEZ ŻADNEGO limitu (patrz komentarz w __init__).
+        self.heating_on = target_state
 
         # --- DIAGNOSTYKA (do IAE/ISE/ITAE - patrz symulacja_fizyczna.uruchom_kontroler):
         # jak w histereza_let1.compute_control - gdy grzeje, cel to próg WYŁĄCZENIA

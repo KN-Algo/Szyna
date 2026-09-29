@@ -26,7 +26,7 @@
 
 from funkcja_ryzyka_wspolne import KontrolerRyzykaBazowy
 from funkcja_ryzyka_adrc_wspolne import (
-    wylicz_parametry_adrc, fal,
+    wylicz_parametry_adrc, dopasowanie_adrc_wiarygodne, fal,
     ADRC_FALLBACK_K, ADRC_FALLBACK_T1, ADRC_FALLBACK_T2, ADRC_FALLBACK_L,
     ADRC_NADRC_ALPHA1, ADRC_NADRC_ALPHA2, ADRC_NADRC_ALPHA_CTRL, ADRC_NADRC_DELTA_C,
 )
@@ -61,7 +61,9 @@ class KontrolerRyzykaNADRC(KontrolerRyzykaBazowy):
 
         if not self._nastawy_adrc_przeliczone:
             wynik = self.autotest_result
-            if wynik is not None and wynik['fit_ok']:
+            # dopasowanie_adrc_wiarygodne (nie samo fit_ok) - patrz zabezpieczenie przed omega_c=1/(2L)
+            # eksplodującym przy L~0 w nagłówku funkcja_ryzyka_adrc_wspolne.py.
+            if dopasowanie_adrc_wiarygodne(wynik):
                 self._b0, self._omega_c, self._omega_o = wylicz_parametry_adrc(
                     wynik['K'], wynik['T1'], wynik['T2'], wynik['L'])
             self._nastawy_adrc_przeliczone = True

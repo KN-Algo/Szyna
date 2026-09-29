@@ -201,6 +201,18 @@ odpala się dopiero przy przekroczeniu 2x limitu SENSOR_HISTORY_MAX_SAMPLES).
 
 ## Status / co jest zrobione
 
+- [x] **Nasłonecznienie w fizyce obiektu (Benchmark_crt, 2026-09-28)** - trzeci składnik temperatury OBU szyn:
+      `HRT = G_W(AT) + G_S,HRT(słońce) + G_H(moc)`, `CRT = G_W(AT) + G_S,CRT(słońce) + G_HC(moc)`. Wejście słońca = średni ułamek
+      godzinowy `naslonecznienie_sekundy / krok` (w środku przedziału, interpolacja liniowa) x sin(wysokość słońca) - moduł
+      `wejscie_slonca.py` (współrzędne 44 lokalizacji). Stałe w `symulacja_fizyczna.py` (G_W przeliczone RAZEM ze słońcem: K 1,217 -> 0,987;
+      G_S CRT 12,8 °C/94 min, HRT 9,6 °C/9,7 h; G_H 47,2/2462/204) - dopasowanie i wykresy: `Identyfikacja/Identyfikacja/dopasowanie_nasloneczenia.py`
+      (RMSE na 21 dniach z Wrocławia: CRT 2,23 -> 1,22 °C, HRT 2,72 -> 1,15 °C). **Wyniki sprzed tej zmiany nie są porównywalne.** Kontroler nie widzi
+      słońca. **Zimowe tłumienie:** w symulacji wkład słońca x `WSPOLCZYNNIK_SLONCA_ZIMA` = 0,5 (założenie po ostrożnej stronie, brak albedo śniegu w
+      modelu; env `SZYNA_SLONCE_WSPOLCZYNNIK_ZIMA`, 1,0 = bez tłumienia; zmierzone: max CRT Sapporo 1,5 -> -1,0 °C, energia +7-8%).
+      Zastrzeżenia: jedna wiosna, słońce z reanalizy, stała HRT słabo zidentyfikowana.
+      **Znalezisko:** `algorytm_z_normy` (referencja bezpiecznika) jest zdławiony dobowym limitem 100 przełączeń (migotanie histerezy 1->3 °C) - patrz
+      pamięć `model-fit-vs-real-data`; nie zmienione.
+
 - [x] Numba JIT dla gorących pętli, pasek postępu.
 - [x] Rozbicie każdego algorytmu na osobny plik + rejestr.
 - [x] Generator Excela (formuły, nie hardkodowane wartości, formatowanie warunkowe).

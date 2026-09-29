@@ -117,18 +117,45 @@ def wnioskowanie_fl_podstawowe(blad_T, hrt, jest_snieg, jest_deszcz):
 
 
 
+def wyznacz_trend_z_pamiacia(t_aktualna, t_poprzednia, stan_poprzedni="rosnie", tolerancja=0.01):
+    """
+    Zwraca 'rosnie' lub 'spada'. 
+    Jeśli temperatura się nie zmieniła (w granicach tolerancji), 
+    zwraca stan_poprzedni.
+    """
+    if t_poprzednia is None:
+        return stan_poprzedni
+
+    roznica = t_aktualna - t_poprzednia
+
+    if roznica > tolerancja:
+        return 0.0 #Rośnie
+    elif roznica < -tolerancja:
+        return 100.0 #Spada
+    else:
+        return stan_poprzedni  # Bez zmian – zostawiamy to co było
+
 def wnioskowanie_fl2v2(blad_T, hrt, ryzyko, jest_snieg, jest_deszcz, at_temp):
     """Rdzeń wnioskowania FL2v2."""
-    if hrt >= 3.0:
-        return 0.0
-    if hrt > 0.0 and at_temp < 0.0:
-        return 0.0
-    if hrt > -5.0 and at_temp <= -10.0:
+    if hrt >= 4.0:
         return 0.0
     if hrt <= -8.0:
         return 100.0
-    if at_temp >= 3.0:
+    if at_temp >= 5.0:
         return 0.0
+    if hrt > -5.0 and at_temp <= -10.0:
+        # POPRAWKA BŁĘDU (2026-09-28, wykryty przy budowie testy/strojenie_fuzzy_2v2.py): było
+        # `wyznacz_trend_z_pamiacia(hrt, hrt, "rosnie", 0.01)` - wywołane z tą samą wartością jako
+        # "aktualna" i "poprzednia" temperatura, więc różnica ZAWSZE wychodzi 0 i funkcja ZAWSZE
+        # trafiała w gałąź `else: return stan_poprzedni`, zwracając LITERAŁ STRING "rosnie" zamiast
+        # liczby - binaryzuj() porównuje to z progiem (`wynik >= próg`) i wywala się TypeError.
+        # Potwierdzone na realnym przebiegu: 18/364 zadań (wszystkie warianty FL2v2, lokalizacje z
+        # dość mroźną nocą - Kraków/Sapporo/Lhasa w krótkich testowych oknach) kończyło się tym
+        # wyjątkiem. Naprawa: gałąź oznacza "szyna jeszcze nie krytycznie zimna (hrt > -5°C), ale
+        # powietrze bardzo mroźne (at_temp <= -10°C)" - spójnie z sąsiednią gałęzią wyżej
+        # (hrt<=-8 -> 100%) bezpieczną odpowiedzią jest pełne grzanie, nie doczekiwanie na dalsze
+        # ostygnięcie szyny.
+        return 100.0
 
     t_ok = rampa_malejaca(blad_T, 0.0, 3.0)
     t_chlodno = trojkat(blad_T, 0.0, 3.0, 6.0)
@@ -159,6 +186,80 @@ def wnioskowanie_fl2v2(blad_T, hrt, ryzyko, jest_snieg, jest_deszcz, at_temp):
                + r6 * MOC_HIGH
                + r7 * MOC_HIGH
                + r_powietrze_mrozi * (MOC_MED if ryzyko < 5.0 else MOC_HIGH)
+               + r_goraco * MOC_OFF)
+    mianownik = r1 + r2 + r3 + r4 + r5 + r6 + r7 + r_powietrze_mrozi + r_goraco
+
+    if mianownik == 0:
+        return 0.0
+    return licznik / mianownik
+
+
+# Domyślne progi silnika FL2v2 - te same liczby, na sztywno, co w wnioskowanie_fl2v2() wyżej.
+# Wydzielone tu jako stałe (2026-09-28, na życzenie użytkownika: przeszukanie nastaw FL2v2),
+# żeby wersja PARAMETRYZOWANA niżej miała nazwane, udokumentowane domyślne wartości - dokładnie
+# ten sam wzorzec co PROG_CHLODNO_DOMYSLNY/wnioskowanie_fl_parametryzowane dla silnika FL1.
+FL2V2_PROG_CHLODNO_DOMYSLNY = 3.0     # blad_T: granica t_ok/t_chlodno
+FL2V2_PROG_MROZNO_DOMYSLNY = 6.0      # blad_T: granica t_chlodno/t_mrozno (pełny t_mrozno od tej wartości)
+FL2V2_PROG_GORACO_DOMYSLNY = 9.0      # blad_T: pełny t_goraco od tej wartości (start rampy w prog_mrozno)
+FL2V2_RYZYKO_WSPOLCZYNNIK_DOMYSLNY = 3.0   # nachylenie prog_lodowato = -10 + ryzyko*WSP (+5 jeśli ryzyko>próg_bonus)
+FL2V2_RYZYKO_PROG_BONUS_DOMYSLNY = 8.0     # próg ryzyka, powyżej którego prog_lodowato dostaje dodatkowe +5°C
+FL2V2_RYZYKO_PROG_MOC_DOMYSLNY = 5.0       # próg ryzyka rozdzielający MOC_LOW/MOC_MED vs MOC_MED/MOC_HIGH w regułach r3/r4/r_powietrze_mrozi
+
+
+def wnioskowanie_fl2v2_parametryzowane(
+        blad_T, hrt, ryzyko, jest_snieg, jest_deszcz, at_temp,
+        prog_chlodno=FL2V2_PROG_CHLODNO_DOMYSLNY, prog_mrozno=FL2V2_PROG_MROZNO_DOMYSLNY,
+        prog_goraco=FL2V2_PROG_GORACO_DOMYSLNY, ryzyko_wspolczynnik=FL2V2_RYZYKO_WSPOLCZYNNIK_DOMYSLNY,
+        ryzyko_prog_bonus=FL2V2_RYZYKO_PROG_BONUS_DOMYSLNY, ryzyko_prog_moc=FL2V2_RYZYKO_PROG_MOC_DOMYSLNY,
+        moc_low=MOC_LOW, moc_med=MOC_MED):
+    """
+    Wersja PARAMETRYZOWANA silnika FL2v2 (patrz wnioskowanie_fl2v2() wyżej - ta funkcja liczy
+    TO SAMO przy domyślnych argumentach, bit-identycznie) - dodana 2026-09-28 do przeszukania
+    nastaw (patrz testy/strojenie_fuzzy_2v2.py i funkcja_fuzzy_ryzyko_2v2_strojony.py).
+
+    CELOWO NIE parametryzowane (zostają jako twarde, bezpieczne odcięcia - stroić je byłoby
+    osłabianiem bezpieczeństwa, nie strojeniem jakości regulacji): hrt>=4.0 -> 0% (wystarczająco
+    ciepło), hrt<=-8.0 -> 100% (blisko bezwzględnego floora -10°C), at_temp>=5.0 -> 0% (na pewno
+    nie zamarznie), gałąź "hrt>-5 i at_temp<=-10" -> 100% (patrz poprawka błędu w wnioskowanie_fl2v2()).
+    """
+    if hrt >= 4.0:
+        return 0.0
+    if hrt <= -8.0:
+        return 100.0
+    if at_temp >= 5.0:
+        return 0.0
+    if hrt > -5.0 and at_temp <= -10.0:
+        return 100.0  # ta sama poprawka co w wnioskowanie_fl2v2() wyżej - patrz komentarz tam
+
+    t_ok = rampa_malejaca(blad_T, 0.0, prog_chlodno)
+    t_chlodno = trojkat(blad_T, 0.0, prog_chlodno, prog_mrozno)
+    t_mrozno = rampa_rosnaca(blad_T, prog_chlodno, prog_mrozno)
+    t_goraco = rampa_rosnaca(blad_T, prog_mrozno, prog_goraco)
+    prog_lodowato = -10.0 + ryzyko * ryzyko_wspolczynnik + (5.0 if ryzyko > ryzyko_prog_bonus else 0.0)
+    t_lodowato = rampa_malejaca(hrt, -10.0, prog_lodowato)
+
+    opad_aktywny = 1.0 if (jest_snieg or jest_deszcz) else 0.0
+    opad_brak = 1.0 if not (jest_snieg or jest_deszcz) else 0.0
+
+    r1 = t_ok
+    r2 = min(t_chlodno, opad_brak)
+    r3 = min(t_chlodno, opad_aktywny)
+    r4 = min(t_mrozno, opad_brak)
+    r5 = min(t_mrozno, opad_aktywny)
+    r6 = t_lodowato
+    r7 = min(1.0 if jest_snieg else 0.0, t_chlodno)
+    r_goraco = t_goraco
+    r_powietrze_mrozi = 1.0 if (at_temp < -5.0) else 0.0
+
+    licznik = (
+                r1 * MOC_OFF
+               + r2 * MOC_OFF
+               + r3 * (moc_med if ryzyko < ryzyko_prog_moc else MOC_HIGH)
+               + r4 * (moc_low if ryzyko < ryzyko_prog_moc else moc_med)
+               + r5 * MOC_HIGH
+               + r6 * MOC_HIGH
+               + r7 * MOC_HIGH
+               + r_powietrze_mrozi * (moc_med if ryzyko < ryzyko_prog_moc else MOC_HIGH)
                + r_goraco * MOC_OFF)
     mianownik = r1 + r2 + r3 + r4 + r5 + r6 + r7 + r_powietrze_mrozi + r_goraco
 
