@@ -548,6 +548,25 @@ ALGORYTMY = {
         'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu',
         'pamiec_przyblizona_mb': 21.0,
     },
+    'fuzzy_ryzyko_2v2_opad_wagi_adaptacyjne': {
+        'modul': 'funkcja_fuzzy_ryzyko_2v2_opad_wagi_adaptacyjne',
+        'klasa': 'KontrolerFuzzyRyzyko2v2OpadWagiAdaptacyjne',
+        'metoda': 'fuzzy_ryzyko_opad_wagi_adaptacyjne',
+        'opis': 'Jak fuzzy_ryzyko_2v2_opad, ale 10 poziomów funkcji ryzyka (histereza_let1.wylicz_poziom_ryzyka) '
+                'to osobne, ADAPTACYJNE wagi zamiast stałych - każda maleje powoli, gdy w danej lokalizacji dany '
+                'warunek historycznie okazuje się fałszywym alarmem (CRT wraca samo nad próg zanim zmaterializuje '
+                'się realne zagrożenie, sprawdzane 10h do przodu), i rośnie szybciej z powrotem, gdy zagrożenie '
+                'było realne - funkcja_fuzzy_ryzyko_2v2_opad_wagi_adaptacyjne.py.',
+        'bezpiecznik': True,
+        'typ': 'Fuzzy logic (FL2v2, binarny, 7 reguł, adaptacyjne wagi ryzyka)',
+        'cel': 'Funkcja ryzyka (Kalman) + prognoza opadu + regionalnie adaptacyjne wagi 10 kategorii ryzyka',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) amortyzowane, skok co 300 kroków (Kalman + cyfrowy bliźniak) + rzadkie '
+                              'wywołania prognozy opadu + O(zdarzenia oczekujące, zwykle kilka-kilkanaście)',
+        'flops_na_krok': 519,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu + kolejka zdarzeń oczekujących',
+        'pamiec_przyblizona_mb': 21.0,
+    },
     'fuzzy_ryzyko_2v2_opad_crt_progi': {
         'modul': 'funkcja_fuzzy_ryzyko_2v2_opad_crt_progi',
         'klasa': 'KontrolerFuzzyRyzyko2v2OpadCrtProgi',
@@ -905,6 +924,55 @@ ALGORYTMY = {
         'flops_na_krok': 455,
         'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory autotestu/modelu',
         'pamiec_przyblizona_mb': 21.0,
+    },
+    'risk_function_model_adaptacyjny': {
+        'modul': 'funkcja_ryzyka_model_adaptacyjny',
+        'klasa': 'KontrolerRyzykaModelAdaptacyjny',
+        'metoda': 'risk_function_model_adaptacyjny',
+        'opis': 'Jak risk_function_pid, ale BEZ jednorazowego autotestu - model obiektu (moc->HRT, pogoda->HRT, '
+                'słońce->HRT) jest identyfikowany NA ŻYWO metodą RLS (Rekurencyjne Najmniejsze Kwadraty, z '
+                'zapominaniem) w każdym kroku, więc dalej się zmienia przez cały przebieg. Sterowanie = '
+                'adaptacyjny feedforward (odwrócony model) + mała PI korekta - funkcja_ryzyka_model_adaptacyjny.py.',
+        'bezpiecznik': True,
+        'typ': 'Adaptacyjny model obiektu (RLS 3 parametry) + feedforward/PI',
+        'cel': 'Funkcja ryzyka (Kalman)',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) amortyzowane, skok co 300 kroków (Kalman) + RLS 3x3 co krok',
+        'flops_na_krok': 475,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory modelu (bez bufora autotestu)',
+        'pamiec_przyblizona_mb': 20.0,
+    },
+    'risk_function_adrc_model_adaptacyjny': {
+        'modul': 'funkcja_ryzyka_adrc_model_adaptacyjny',
+        'klasa': 'KontrolerRyzykaADRCModelAdaptacyjny',
+        'metoda': 'risk_function_adrc_model_adaptacyjny',
+        'opis': 'Jak risk_function_ladrc, ale b0 (wzmocnienie wejścia ESO) płynie NA ŻYWO z modelu RLS '
+                '(model_obiektu_rls.py, WSPÓLNY z risk_function_model_adaptacyjny/mpc_model_adaptacyjny) zamiast '
+                'z jednorazowego autotestu - funkcja_ryzyka_adrc_model_adaptacyjny.py.',
+        'bezpiecznik': True,
+        'typ': 'ADRC (liniowy, ESO 2-stanowy) + adaptacyjny model obiektu (RLS)',
+        'cel': 'Funkcja ryzyka (Kalman)',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) amortyzowane, skok co 300 kroków (Kalman) + RLS 3x3 i ESO co krok',
+        'flops_na_krok': 480,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory modelu (bez bufora autotestu)',
+        'pamiec_przyblizona_mb': 20.0,
+    },
+    'mpc_model_adaptacyjny': {
+        'modul': 'funkcja_mpc_model_adaptacyjny',
+        'klasa': 'KontrolerMPCModelAdaptacyjny',
+        'metoda': 'mpc_model_adaptacyjny',
+        'opis': 'Jak mpc_liniowy, ale model blokowy (K/T1, jednobiegunowy - patrz model_obiektu_rls.py) jest '
+                'ODŚWIEŻANY co krok z ŻYWEGO modelu RLS zamiast budowany RAZ z jednorazowego autotestu SOPDT - '
+                'funkcja_mpc_model_adaptacyjny.py.',
+        'bezpiecznik': True,
+        'typ': 'MPC (QP L-BFGS-B) + adaptacyjny model obiektu (RLS, 1 biegun)',
+        'cel': 'Funkcja ryzyka (Kalman)',
+        'adaptacyjny': True,
+        'zlozonosc_czasowa': 'O(1) amortyzowane + RLS 3x3 co krok + QP co blok 15-minutowy (L-BFGS-B, 8 zmiennych)',
+        'flops_na_krok': 500,
+        'zlozonosc_pamieciowa': 'O(min(krok, 43200)) + bufory modelu (bez bufora autotestu)',
+        'pamiec_przyblizona_mb': 20.0,
     },
     'risk_function_nadrc': {
         'modul': 'funkcja_ryzyka_nadrc',
